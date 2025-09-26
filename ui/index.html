@@ -1,0 +1,447 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MentorZero | Adaptive Learning Platform</title>
+  <link rel="stylesheet" href="/ui/style.css?v=16" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="shortcut icon" href="/ui/favicon.ico" type="image/x-icon">
+</head>
+<body>
+  <div class="app-container">
+    <div id="topProgress" class="top-progress"></div>
+    <!-- Header -->
+    <header class="main-header">
+      <div class="container header-container">
+        <h1 class="logo">
+          <i class="fas fa-robot logo-icon"></i>
+          MentorZero
+        </h1>
+        <nav class="main-nav">
+          <button class="nav-btn active" data-page="home">
+            <i class="fas fa-house"></i> Home
+          </button>
+          <button class="nav-btn" data-page="learn">
+            <i class="fas fa-comments"></i> Chat
+          </button>
+          <button class="nav-btn" data-page="about">
+            <i class="fas fa-info-circle"></i> About
+          </button>
+          <button class="nav-btn" data-page="azl">
+            <i class="fas fa-flask"></i> AutoLearn
+          </button>
+        </nav>
+        <div class="header-controls">
+          <div id="healthLLM" class="health-dot" title="LLM: unknown"></div>
+          <div id="healthJudge" class="health-dot alt" title="Judge: unknown"></div>
+          <!-- TTS Toggle -->
+          <button id="ttsToggle" class="feature-toggle" title="Text-to-speech">
+            <i class="fas fa-volume-up"></i>
+          </button>
+          <!-- Theme Toggle moved to header -->
+          <button id="themeToggle" class="theme-toggle" title="Toggle theme">🌙</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="content-wrapper">
+      <!-- Home Page -->
+      <div class="page active" id="home-page">
+        <div class="container">
+          <div class="card glass">
+            <div class="card-header">
+              <h3>Welcome to MentorZero</h3>
+            </div>
+            <div class="card-body">
+              <p class="mb-3">MentorZero is an offline‑first adaptive tutor. It combines your documents (RAG) with self‑learned examples (AutoLearn) to deliver better answers in Chat.</p>
+              <h4 class="mb-2">Get started</h4>
+              <ol class="compact-list mb-3">
+                <li><strong>Upload</strong> some notes below on the Chat page (merged into Chat).</li>
+                <li><strong>AutoLearn</strong> a topic to create high‑quality Q&A examples.</li>
+                <li><strong>Chat</strong> — ask questions and get cited, structured answers.</li>
+              </ol>
+              <div class="stats-grid mb-3">
+                <div class="stat-card"><div class="stat-value">Private</div><div class="stat-label">Runs locally</div></div>
+                <div class="stat-card"><div class="stat-value">RAG</div><div class="stat-label">Cited answers</div></div>
+                <div class="stat-card"><div class="stat-value">AZL</div><div class="stat-label">Self‑improving</div></div>
+              </div>
+              <div class="form-actions">
+                <button class="btn btn-primary" onclick="document.querySelector('.nav-btn[data-page=learn]').click()">
+                  <i class="fas fa-comments"></i> Go to Chat
+                </button>
+                <button class="btn btn-outline" onclick="document.querySelector('.nav-btn[data-page=azl]').click()">
+                  <i class="fas fa-flask"></i> Open AutoLearn
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Learn Page -->
+      <div class="page" id="learn-page">
+        <div class="container">
+          <div class="chat-layout">
+            <!-- Sidebar with options (user id hidden) -->
+            <div class="chat-sidebar">
+              <input type="hidden" id="userId" />
+              
+              <!-- Learning Mode Selection -->
+              <div class="sidebar-section">
+                <h4>Learning Mode</h4>
+                <div class="mode-selector vertical">
+                  <div class="mode-switch">
+                    <div class="mode-switch-option active" data-mode="explain">
+                      <i class="fas fa-book-open"></i>
+                      <span>Explain</span>
+                    </div>
+                    <div class="mode-switch-option" data-mode="quiz">
+                      <i class="fas fa-question-circle"></i>
+                      <span>Quiz</span>
+                    </div>
+                    <div class="mode-switch-slider"></div>
+                  </div>
+                </div>
+                <select id="mode" class="hidden">
+                  <option value="explain">explain</option>
+                  <option value="quiz">quiz</option>
+                </select>
+              </div>
+              
+              <!-- Stats Toggle Button -->
+              <button id="statsToggle" class="btn btn-outline" aria-controls="miniStats" aria-expanded="false">
+                <i class="fas fa-chart-bar"></i> Show Progress
+              </button>
+              <!-- Clear Chat Button -->
+              <button id="clearChatBtn" class="btn btn-outline" title="Clear chat history">
+                <i class="fas fa-trash-alt"></i> Clear Chat
+              </button>
+              <div id="miniStats" class="mini-stats-panel"></div>
+            </div>
+            
+            <!-- Main Chat Area -->
+            <div class="chat-main">
+              <!-- Conversation Area -->
+              <div class="conversation-area" id="conversation-messages">
+                <!-- Welcome Message -->
+                <div class="system-message">
+                  <div class="message-content">
+                    <h3>Welcome to MentorZero</h3>
+                    <p>Your adaptive learning assistant. Ask me about any topic to start learning!</p>
+                  </div>
+                </div>
+                <!-- Messages will be inserted here dynamically -->
+                <pre id="output" class="hidden"></pre>
+              </div>
+              
+              <!-- Input Area -->
+              <div class="chat-input-area">
+                <div class="topic-input-container">
+                  <input id="topic" class="chat-input" placeholder="Ask me anything! Try 'What is machine learning?' or just 'Python'" />
+                  <button id="micTopicBtn" class="mic-btn" title="Voice input">
+                    <i class="fas fa-microphone"></i>
+                  </button>
+                  <button id="startBtn" class="btn btn-primary send-btn">
+                    Ask
+                  </button>
+                  <button id="copyIdBtn" class="session-btn hidden" title="Copy Session ID">
+                    <i class="fas fa-clipboard"></i>
+                  </button>
+                </div>
+                
+                <div class="answer-input-container hidden">
+                  <input id="answer" class="chat-input" placeholder="Your answer..." />
+                  <button id="micAnswerBtn" class="mic-btn" title="Voice input">
+                    <i class="fas fa-microphone"></i>
+                  </button>
+                  <button id="submitBtn" class="btn btn-primary send-btn">
+                    <i class="fas fa-paper-plane"></i>
+                  </button>
+                </div>
+                
+                <div id="voice-container" class="voice-container"></div>
+              </div>
+            </div>
+          <!-- Inline Upload tools (merged RAG ingest) -->
+          <details class="clean-details mt-4">
+            <summary class="clean-summary"><i class="fas fa-cloud-upload-alt"></i> Upload Knowledge</summary>
+            <div class="upload-anim">
+              <div class="card upload-card glass mt-2">
+              <div class="card-header upload-head">
+                <div class="head-left">
+                  <h3>Upload Learning Material</h3>
+                  <div class="sub">Agentic RAG will index chunks and use them as live citations.</div>
+                </div>
+                <div class="head-actions">
+                  <button class="info-btn" title="What is this?">
+                    <i class="fas fa-info-circle"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="card-body upload-body">
+                <div class="info-tooltip hidden">
+                  Upload text to enhance the AI's knowledge. Indexed chunks are retrieved with query rewriting, MMR diversification, and passed as citations to the model.
+                </div>
+                <div class="upload-layout">
+                  <div class="dropzone" id="uploadDrop">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <div class="dz-title">Drop files here or paste text below</div>
+                    <div class="dz-hint">.txt, .md supported • Max ~2MB</div>
+                  </div>
+                  <input type="file" id="uploadFile" accept=".txt,.md" class="hidden" />
+                  <textarea id="uploadText" class="upload-textarea" rows="10" placeholder="Paste text to index..."></textarea>
+                </div>
+                <div class="upload-metrics">
+                  <div class="kpi"><div class="kpi-label">Chunks</div><div id="uploadChunks" class="kpi-value">0</div></div>
+                  <div class="kpi"><div class="kpi-label">Time</div><div id="uploadTime" class="kpi-value">0 ms</div></div>
+                  <div class="kpi"><div class="kpi-label">Size</div><div id="uploadSize" class="kpi-value">0 KB</div></div>
+                  <div class="kpi" id="uploadStatusKpi"><div class="kpi-label">Status</div><div id="uploadStatus" class="kpi-value">–</div></div>
+                </div>
+                <div class="progress-wrap"><div class="progress"><div id="uploadProgress" class="progress-bar" style="width:0%"></div></div></div>
+                <div class="form-actions upload-actions">
+                  <button id="uploadBtn" class="btn btn-primary">
+                    <i class="fas fa-cloud-upload-alt"></i> Upload
+                  </button>
+                  <div class="input-with-icon" style="flex:1; max-width:420px;">
+                    <i class="fas fa-link input-icon"></i>
+                    <input id="uploadUrl" class="form-control" placeholder="Fetch URL and ingest (optional)" />
+                  </div>
+                  <button id="scrapeBtn" class="btn btn-outline" title="Fetch URL and ingest">
+                    <i class="fas fa-globe"></i> Fetch URL
+                  </button>
+                  <label class="switch">
+                    <input type="checkbox" id="autoRerunTeach" checked>
+                    <span class="slider"></span>
+                    <span class="switch-label">Auto re-run teach</span>
+                  </label>
+                </div>
+              </div>
+              </div>
+            </div>
+          </details>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upload Page removed: merged into Chat -->
+
+      <!-- About Page -->
+      <div class="page" id="about-page">
+        <div class="container">
+          <div class="card glass">
+            <div class="card-header">
+              <h3>About MentorZero</h3>
+            </div>
+            <div class="card-body">
+              <p class="mb-3">MentorZero is an offline‑first, zero‑cost adaptive tutoring agent. It runs locally via Ollama and helps you learn faster with personalized teaching, live context from your own uploads, and self‑improving AutoLearn.</p>
+              <div class="stats-grid mb-3">
+                <div class="stat-card"><div class="stat-value">Local</div><div class="stat-label">Private by design</div></div>
+                <div class="stat-card"><div class="stat-value">RAG</div><div class="stat-label">Cited answers</div></div>
+                <div class="stat-card"><div class="stat-value">AutoLearn</div><div class="stat-label">Self‑improving</div></div>
+              </div>
+              <h4 class="mb-2">How to use</h4>
+              <ul class="compact-list mb-3">
+                <li><strong>Chat:</strong> ask a question; answers stream with citations when available.</li>
+                <li><strong>Upload:</strong> paste text to index; AutoLearn shows generation and judging live.</li>
+              </ul>
+              <h4 class="mb-2">Keyboard shortcuts</h4>
+              <ul class="compact-list list-two-col mb-3 text-sm">
+                <li><span class="kbd">Alt</span> + <span class="kbd">T</span> cycle tabs (Chat → Upload → About → AutoLearn)</li>
+                <li><span class="kbd">Alt</span> + <span class="kbd">L</span> toggle theme</li>
+                <li><span class="kbd">/</span> focus Chat input</li>
+              </ul>
+              <h4 class="mb-2">Stack</h4>
+              <ul class="compact-list mb-1 text-sm">
+                <li><strong>Local LLM:</strong> Ollama (configurable)</li>
+                <li><strong>Backend:</strong> FastAPI • FAISS • SSE</li>
+                <li><strong>Frontend:</strong> Vanilla JS</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- AZL Page -->
+      <div class="page" id="azl-page">
+        <div class="container">
+          <div class="card azl-card">
+            <div class="card-header">
+              <h3>AutoLearn</h3>
+              <button class="info-btn" title="What is AZL?">
+                <i class="fas fa-info-circle"></i>
+              </button>
+            </div>
+            <div class="card-body">
+              <div class="info-tooltip hidden">
+                AZL is a self-improvement mechanism that allows MentorZero to generate, validate, and incorporate synthetic learning examples. This helps the system get better over time with minimal human intervention.
+              </div>
+              
+              <!-- AZL Proposal Form -->
+              <div class="azl-section">
+                <div class="azl-head">
+                  <h4 class="azl-title">Generate Learning Examples</h4>
+                  <div class="azl-head-actions">
+                    <button id="autolearnBtn" type="button" class="btn btn-outline" title="Self-generate, self-judge, auto-accept">
+                      <i class="fas fa-robot"></i> AutoLearn
+                    </button>
+                  </div>
+                </div>
+                <form class="azl-form azl-form-grid">
+                  <div class="form-group">
+                    <label class="form-label" for="azlTopic">Topic</label>
+                    <div class="input-with-icon">
+                      <i class="fas fa-grip-lines input-icon"></i>
+                      <input class="form-control" id="azlTopic" placeholder="e.g., Principal Component Analysis" />
+                    </div>
+                    <div class="form-hint">Be specific. This seeds example generation and validation.</div>
+                  </div>
+                  <div class="form-group narrow">
+                    <label class="form-label" for="azlCount">Examples</label>
+                    <input type="number" class="form-control" id="azlCount" value="5" min="1" max="10" />
+                  </div>
+                  <div class="form-group narrow">
+                    <label class="form-label" for="azlThreshold">Pass threshold</label>
+                    <input type="number" step="0.01" class="form-control" id="azlThreshold" placeholder="Use default" />
+                  </div>
+                  <div class="form-group narrow">
+                    <label class="form-label" for="azlMaxAttempts">Max attempts</label>
+                    <input type="number" class="form-control" id="azlMaxAttempts" placeholder="Use default" />
+                  </div>
+                  <div class="form-group narrow">
+                    <label class="form-label" for="azlJudgeModel">Judge model</label>
+                    <input class="form-control" id="azlJudgeModel" placeholder="Use default" />
+                  </div>
+                  <div class="form-group narrow">
+                    <label class="form-label" for="azlTimeout">Timeout (s)</label>
+                    <input type="number" class="form-control" id="azlTimeout" placeholder="Default" min="1" />
+                  </div>
+                  <div class="form-group narrow">
+                    <label class="form-label" for="azlBudget">Daily budget</label>
+                    <input type="number" class="form-control" id="azlBudget" placeholder="Default" min="1" />
+                  </div>
+                  <div class="form-group narrow">
+                    <label class="form-label" for="azlJudgeMargin">Judge margin</label>
+                    <input type="number" step="0.01" class="form-control" id="azlJudgeMargin" placeholder="0.10" />
+                  </div>
+                  <div class="form-actions right">
+                    <button id="proposeBtn" type="button" class="btn btn-primary">
+                      <i class="fas fa-lightbulb"></i> Generate Examples
+                    </button>
+                  </div>
+                </form>
+                <div class="azl-sticky">
+                  <div class="azl-tip">
+                    <i class="fas fa-circle-info"></i>
+                    <span>Tip: AutoLearn streams progress in a modal; examples accepted are cached for future few-shot prompting.</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- AZL Examples List -->
+              <div class="azl-section mt-4 hidden" id="azl-examples">
+                <h4>Generated Examples</h4>
+                <div class="examples-list" id="examples-container">
+                  <!-- Examples will be inserted here -->
+                </div>
+              </div>
+
+              <!-- AZL Observer -->
+              <div class="azl-section mt-4 hidden" id="azl-observer">
+                <h4>AutoLearn Observer</h4>
+                <div class="observer-meta" id="observerInlineMeta"></div>
+                <div class="observer-kpis" id="observerKpis">
+                  <div class="kpi"><div class="kpi-label">Items</div><div class="kpi-value" id="kpiItems">0</div></div>
+                  <div class="kpi"><div class="kpi-label">Accepted</div><div class="kpi-value" id="kpiAccepted">0</div></div>
+                  <div class="kpi"><div class="kpi-label">Attempts</div><div class="kpi-value" id="kpiAttempts">0</div></div>
+                  <div class="kpi"><div class="kpi-label">Judge</div><div class="kpi-value" id="kpiJudge">–</div></div>
+                </div>
+                <div id="observer-timeline" class="observer-timeline"></div>
+              </div>
+              
+              <!-- AZL Validation Results -->
+              <div class="azl-section mt-4 hidden" id="azl-validation">
+                <h4>Validation Results</h4>
+                <div class="validation-results" id="validation-container">
+                  <!-- Validation results will be inserted here -->
+                </div>
+                <div class="form-actions mt-3">
+                  <button id="acceptBtn" class="btn btn-success">
+                    <i class="fas fa-check"></i> Accept Example
+                  </button>
+                  <button id="rejectBtn" class="btn btn-danger">
+                    <i class="fas fa-times"></i> Reject Example
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="main-footer">
+      <div class="container footer-container">
+        <p>MentorZero - Offline-first Adaptive Tutoring Agent</p>
+        <p class="version">v0.1.0</p>
+      </div>
+    </footer>
+  </div>
+  
+  <!-- Toast Notification -->
+  <div id="toast" class="toast hidden"></div>
+  
+  <!-- Modal Overlay for AutoLearn -->
+  <div id="observerModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>AutoLearn Observer</h3>
+        <div id="observerStatus" class="run-indicator" aria-live="polite">
+          <span class="run-dot" aria-hidden="true"></span>
+          <span class="run-text">Running</span>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="progress-wrap"><div class="progress"><div id="observerProgress" class="progress-bar" style="width:0%"></div></div></div>
+        <div class="observer-meta" id="observerMeta"></div>
+        <div id="observer-timeline-modal" class="observer-timeline"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="observerLogCopy" class="btn btn-secondary"><i class="fas fa-copy"></i> Copy Log</button>
+        <button id="observerLogDownload" class="btn btn-secondary"><i class="fas fa-download"></i> Download Log</button>
+        <button id="observerClose" class="btn btn-outline">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clear Chat Confirmation Modal -->
+  <div id="clearChatModal" class="modal-overlay hidden">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3>Clear Chat History</h3>
+        <button id="closeModalBtn" class="modal-close-btn">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-icon">
+          <i class="fas fa-exclamation-triangle"></i>
+        </div>
+        <p>Are you sure you want to clear all chat history?</p>
+        <p class="modal-warning">This action cannot be undone and will remove all messages, optimizations, and conversation data.</p>
+      </div>
+      <div class="modal-footer">
+        <button id="cancelClearBtn" class="btn btn-outline">Cancel</button>
+        <button id="confirmClearBtn" class="btn btn-danger">Clear Chat</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Scripts -->
+  <script type="module" src="/ui/js/main.js?v=18"></script>
+  <script src="/ui/clean_integration.js"></script>
+  <script src="/ui/help_guide.js"></script>
+</body>
+</html>

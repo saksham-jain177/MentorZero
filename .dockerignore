@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Envs and IDE
+.venv/
+venv/
+.env
+.vscode/
+.idea/
+.DS_Store
+
+# Models / data / caches (mounted at runtime if needed)
+data/
+models/
+.ollama/
+.cache/
+node_modules/

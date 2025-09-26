@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, Optional
+import json
+import os
+import time
 
 import httpx
 
@@ -114,7 +117,6 @@ class OllamaClient:
             logger.error(f"Ollama not configured properly: host={self.host}, model={self.model}")
             raise ValueError("Ollama host/model not configured")
         # Circuit breaker: short-circuit if open
-        import time
         now = time.time()
         if now < self._cb_open_until:
             raise RuntimeError("ollama_circuit_open")
@@ -133,6 +135,14 @@ class OllamaClient:
         logger.info(f"Sending request to Ollama at {self.host} for model {self.model}")
         logger.debug(f"Payload: {payload}")
 
+        # Ensure logs directory exists
+        try:
+            os.makedirs("data", exist_ok=True)
+        except Exception:
+            pass
+
+        start_ts = time.time()
+
         try:
             async with httpx.AsyncClient(base_url=self.host, timeout=self.timeout_seconds) as client:
                 logger.info(f"Making POST request to {self.host}/api/generate")
@@ -146,6 +156,26 @@ class OllamaClient:
                 # Reset breaker on success
                 self._cb_failures = 0
                 self._cb_open_until = 0.0
+
+                # Structured request log (JSONL)
+                try:
+                    log_rec = {
+                        "ts": start_ts,
+                        "duration_ms": int((time.time() - start_ts) * 1000),
+                        "host": self.host,
+                        "endpoint": "/api/generate",
+                        "model": self.model,
+                        "status": "success",
+                        "http_status": resp.status_code,
+                        "prompt_chars": len(prompt or ""),
+                        "system": bool(system_prompt),
+                        "temperature": temperature,
+                        "meta": {k: v for k, v in data.items() if k not in ("response", "text")},
+                    }
+                    with open("data/ollama_requests.log", "a", encoding="utf-8") as f:
+                        f.write(json.dumps(log_rec, ensure_ascii=False) + "\n")
+                except Exception as _:
+                    pass
                 return {"text": text, "confidence": float(confidence)}
         except Exception as e:
             logger.error(f"Error sending request to Ollama: {str(e)}")
@@ -154,4 +184,22 @@ class OllamaClient:
             if self._cb_failures >= self._cb_threshold:
                 self._cb_open_until = time.time() + self._cb_cooldown_seconds
                 logger.warning("Circuit opened for Ollama client due to repeated failures")
+            # Log failure
+            try:
+                log_rec = {
+                    "ts": start_ts,
+                    "duration_ms": int((time.time() - start_ts) * 1000),
+                    "host": self.host,
+                    "endpoint": "/api/generate",
+                    "model": self.model,
+                    "status": "error",
+                    "error": str(e),
+                    "prompt_chars": len(prompt or ""),
+                    "system": bool(system_prompt),
+                    "temperature": temperature,
+                }
+                with open("data/ollama_requests.log", "a", encoding="utf-8") as f:
+                    f.write(json.dumps(log_rec, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
             raise

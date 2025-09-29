@@ -62,7 +62,7 @@ async function reaskVariant(topic, variant, sessionId) {
 import { appState, setSessionId } from './state.js';
 import { startTeach } from './teach.js';
 import { submitAnswer } from './answer.js';
-import { uploadText, scrapeFetch } from './upload.js';
+import { uploadText, scrapeFetch, clearKB } from './upload.js';
 import { setupVoiceControls } from './voice.js';
 import { initDashboard, fetchProgressData } from './dashboard.js';
 
@@ -656,6 +656,17 @@ function setButtonLoading(buttonId, isLoading, loadingText = 'Processing...', or
     button.disabled = false;
     button.innerHTML = originalHtml || button.dataset.originalHtml || button.innerHTML;
     delete button.dataset.originalHtml;
+  }
+}
+
+// Global busy state (prevents spamming while a request is underway)
+function setGlobalBusy(isBusy) {
+  const body = document.body;
+  if (!body) return;
+  if (isBusy) {
+    body.classList.add('busy');
+  } else {
+    body.classList.remove('busy');
   }
 }
 
@@ -1298,7 +1309,7 @@ async function onUpload() {
       // Re-run teach
       const userId = readValue('userId');
       const topic = readValue('topic');
-      const mode = document.querySelector('input[name="mode-radio"]:checked').value;
+      const mode = document.querySelector('input[name="mode-radio"]:checked')?.value || 'explain';
       
       // Show loading state
       appState.isProcessing = true;
@@ -2265,6 +2276,26 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('submitBtn')?.addEventListener('click', onSubmit);
   document.getElementById('uploadBtn')?.addEventListener('click', onUpload);
   document.getElementById('scrapeBtn')?.addEventListener('click', onScrape);
+  document.getElementById('clearKbBtn')?.addEventListener('click', async () => {
+    try {
+      setButtonLoading('clearKbBtn', true, 'Clearing...');
+      const res = await clearKB({ sessionId: appState.sessionId });
+      setButtonLoading('clearKbBtn', false);
+      if (res.ok && res.data?.cleared) {
+        showToast('Knowledge base cleared', 'success');
+        // Reset upload KPIs
+        const elC = document.getElementById('uploadChunks'); if (elC) elC.textContent = '0';
+        const elT = document.getElementById('uploadTime'); if (elT) elT.textContent = '0 ms';
+        const elS = document.getElementById('uploadSize'); if (elS) elS.textContent = '0 KB';
+        const status = document.getElementById('uploadStatus'); if (status) status.textContent = '–';
+      } else {
+        showToast(res.data?.error || 'Failed to clear KB', 'error');
+      }
+    } catch {
+      setButtonLoading('clearKbBtn', false);
+      showToast('Failed to clear KB', 'error');
+    }
+  });
   document.getElementById('clearChatBtn')?.addEventListener('click', showClearChatModal);
 
   // Upload panel coexistence: when Upload Knowledge (details) opens, hide chat area; when closed, show chat area
@@ -2466,22 +2497,51 @@ document.addEventListener('DOMContentLoaded', function() {
 async function onScrape() {
   const url = readValue('uploadUrl');
   if (!url) { showToast('Enter a URL to fetch', 'error'); return; }
+  if (appState.isProcessing) { showToast('Already processing a request, please wait...', 'warning'); return; }
   if (!appState.sessionId) {
     const sid = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `sess-${Date.now()}`;
     try { setSessionId(sid); } catch {}
   }
   try {
+    appState.isProcessing = true;
+    setGlobalBusy(true);
+    startTopProgress();
+    const t0 = performance.now();
     setButtonLoading('scrapeBtn', true, 'Fetching...');
     const res = await scrapeFetch({ sessionId: appState.sessionId, url });
     setButtonLoading('scrapeBtn', false);
-    if (!res.ok) { showToast(res.data?.error || 'Fetch failed', 'error'); return; }
+    if (!res.ok) {
+      showToast(res.data?.error || 'Fetch failed', 'error');
+      // Reset KPIs to error state
+      const status = document.getElementById('uploadStatus');
+      const kpi = document.getElementById('uploadStatusKpi');
+      if (status) status.textContent = 'Error';
+      if (kpi) { kpi.classList.remove('status-ok'); kpi.classList.add('status-err'); }
+      return;
+    }
     if (!appState.sessionId && res.data?.session_id) {
       try { setSessionId(res.data.session_id); } catch {}
     }
     const chunks = res.data.extracted_chunks_count || 0;
-    showToast(`Fetched and indexed ${chunks} chunks`, 'success');
+    const t1 = performance.now();
+    const ms = Math.round(t1 - t0);
+    // Update KPIs identically to upload path
+    const elC = document.getElementById('uploadChunks'); if (elC) elC.textContent = String(chunks);
+    const elT = document.getElementById('uploadTime'); if (elT) elT.textContent = `${ms} ms`;
+    const status = document.getElementById('uploadStatus');
+    const kpi = document.getElementById('uploadStatusKpi');
+    if (status) status.textContent = 'OK';
+    if (kpi) { kpi.classList.remove('status-err'); kpi.classList.add('status-ok'); }
+    const progress = document.getElementById('uploadProgress');
+    if (progress) progress.style.width = '100%';
+    showToast(`Fetched and indexed ${chunks} chunks in ${ms} ms`, 'success');
   } catch (e) {
     setButtonLoading('scrapeBtn', false);
     showToast('Fetch failed', 'error');
+  }
+  finally {
+    appState.isProcessing = false;
+    setGlobalBusy(false);
+    finishTopProgress();
   }
 }

@@ -79,6 +79,12 @@ class UploadTextResponse(BaseModel):
     extracted_chunks_count: int
     session_id: Optional[str] = None
 
+class ClearKBRequest(BaseModel):
+    sessionId: Optional[str] = None
+
+class ClearKBResponse(BaseModel):
+    cleared: bool
+
 class ProgressResponse(BaseModel):
     accuracy: float
     streak: int
@@ -355,12 +361,7 @@ async def teach(
         else:
             session_id = request.sessionId
             
-        # Always clear existing session data for this topic to prevent caching
-        # This ensures we always get a fresh response for each query
-        teaching_service._sessions = {}
-        teaching_service._contexts = {}
-        teaching_service._mastery_tracking = {}
-        logger.info(f"Cleared all existing sessions for fresh request on topic: {request.topic}")
+        # Keep existing sessions; do not clear global state (avoids losing active sessions)
         
         # Initialize mastery tracking for Loop-Until-Mastered
         teaching_service._initialize_mastery_tracking(session_id, request.userId, sanitized_topic)
@@ -379,9 +380,15 @@ async def teach(
         
         # Retrieve Agentic RAG context (required)
         context = await teaching_service.retrieve_context(session_id, sanitized_topic)
+        rag_used = bool((context or "").strip())
+        # Build a short citations preview (first up to 3 lines)
+        try:
+            _citations_lines = [ln for ln in (context or "").splitlines() if ln.strip()][:3]
+        except Exception:
+            _citations_lines = []
         
         # Log the request details
-        logger.info(f"Teaching request: user={request.userId}, topic={sanitized_topic}, mode={sanitized_mode}, session_id={session_id}")
+        logger.info(f"Teaching request: user={request.userId}, topic={sanitized_topic}, mode={sanitized_mode}, session_id={session_id}, rag_used={rag_used}")
         
         # Generate response based on intent
         try:
@@ -408,8 +415,23 @@ async def teach(
             # Fallback to a simple response
             first_item = f"I'd be happy to help you learn about {sanitized_topic}! Could you be more specific about what aspect you'd like to explore?"
         
-        # Log the response
+        # Log the response + simple JSONL audit
         logger.info(f"Generated explanation for session {session_id}, topic: {sanitized_topic}")
+        try:
+            import os as _os, json as _json
+            _os.makedirs("data", exist_ok=True)
+            with open("data/teach_events.log", "a", encoding="utf-8") as _f:
+                _f.write(_json.dumps({
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "session_id": session_id,
+                    "user_id": request.userId,
+                    "topic": sanitized_topic,
+                    "mode": sanitized_mode,
+                    "rag_used": rag_used,
+                    "citations_count": len(_citations_lines)
+                }) + "\n")
+        except Exception:
+            pass
 
         # Add explicit cache-control to avoid any intermediate caching
         from fastapi import Response
@@ -417,7 +439,9 @@ async def teach(
         return Response(
             content=_json.dumps({
                 "session_id": session_id,
-                "first": first_item
+                "first": first_item,
+                "rag_used": rag_used,
+                "citations": _citations_lines
             }),
             media_type="application/json",
             headers={"Cache-Control": "no-store"}
@@ -743,6 +767,35 @@ async def scrape_fetch(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to scrape: {str(e)}")
+
+@router.post("/kb/clear", response_model=ClearKBResponse)
+async def clear_kb(
+    request: ClearKBRequest,
+    teaching_service: TeachingService = Depends(get_teaching_service),
+):
+    """Clear the FAISS index and BM25 cache. If sessionId is provided, also clear cached context for that session."""
+    try:
+        # Reset FAISS store and BM25 in AgenticRAG
+        rag = teaching_service._rag  # type: ignore
+        if rag is None:
+            raise HTTPException(status_code=500, detail="RAG not configured")
+        # Clear FAISS
+        rag.store.clear_all()
+        # Clear BM25 state
+        rag._bm25_docs = []  # type: ignore
+        rag._bm25_doc_freqs = {}  # type: ignore
+        rag._bm25_avg_len = 0.0  # type: ignore
+        # Optionally clear session context
+        if request.sessionId:
+            try:
+                teaching_service._contexts.pop(request.sessionId, None)
+            except Exception:
+                pass
+        return {"cleared": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear KB: {str(e)}")
 
 @router.get("/progress/{session_id}", response_model=ProgressResponse)
 async def get_progress(

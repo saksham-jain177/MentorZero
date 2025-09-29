@@ -24,3 +24,10 @@ export async function scrapeFetch({ sessionId, url }) {
 		if (window.finishTopProgress) window.finishTopProgress();
 	}
 }
+
+export async function clearKB({ sessionId } = {}) {
+	return await request('/kb/clear', {
+		method: 'POST',
+		json: { sessionId: sessionId || null }
+	});
+}

@@ -63,14 +63,14 @@
   --dark-card-bg: #1f2937;
   --dark-card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3),
     0 2px 4px -1px rgba(0, 0, 0, 0.2);
-  /* Health indicators */
+  /* Health indicators (disabled visual dots) */
   --health-ready: #16a34a;
-  --health-ready-glow: rgba(22, 163, 74, 0.35);
+  --health-ready-glow: rgba(0,0,0,0);
   --health-down: #ef4444;
-  --health-down-glow: rgba(239, 68, 68, 0.35);
+  --health-down-glow: rgba(0,0,0,0);
   --health-idle: #94a3b8;
   --health-alt: #60a5fa;
-  --health-alt-glow: rgba(96, 165, 250, 0.35);
+  --health-alt-glow: rgba(0,0,0,0);
   /* Mode switch visuals */
   --mode-border-color: rgba(0, 0, 0, 0.08);
   --mode-bg: rgba(0, 0, 0, 0.04);
@@ -92,10 +92,10 @@ html.dark {
   --bg: var(--dark-bg);
   --card-bg: var(--dark-card-bg);
   --card-shadow: var(--dark-card-shadow);
-  /* Stronger glow in dark mode */
-  --health-ready-glow: rgba(22, 163, 74, 0.6);
-  --health-down-glow: rgba(239, 68, 68, 0.6);
-  --health-alt-glow: rgba(96, 165, 250, 0.6);
+  /* Disable glow in dark mode as well */
+  --health-ready-glow: rgba(0,0,0,0);
+  --health-down-glow: rgba(0,0,0,0);
+  --health-alt-glow: rgba(0,0,0,0);
   /* Mode switch visuals */
   --mode-border-color: rgba(255, 255, 255, 0.1);
   --mode-bg: rgba(0, 0, 0, 0.2);
@@ -249,10 +249,7 @@ html.dark .top-progress {
   gap: 0.5rem;
 }
 
-.health-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--health-idle); box-shadow: none; align-self: center; margin: 0 6px; opacity: 0.95; }
-.health-dot.ready { background: var(--health-ready); box-shadow: 0 0 10px var(--health-ready-glow); }
-.health-dot.down { background: var(--health-down); box-shadow: 0 0 10px var(--health-down-glow); }
-.health-dot.alt { background: var(--health-alt); box-shadow: 0 0 10px var(--health-alt-glow); }
+.health-dot { display: none; }
 
 .feature-toggle,
 .theme-toggle {
@@ -1829,4 +1826,36 @@ details[open] > summary.clean-summary::before { transform: rotate(90deg); }
     max-height: none;
     margin-bottom: 1rem;
   }
+}
+
+/* Global busy state: disable pointer events and dim UI */
+body.busy {
+  cursor: progress !important;
+}
+body.busy * {
+  pointer-events: none !important;
+}
+
+/* New Home hero */
+.hero { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; align-items: stretch; margin: 10px 0 14px; }
+.hero-text { background: var(--card-bg); border-radius: var(--border-radius); box-shadow: var(--card-shadow); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.hero-title { margin: 0; font-size: 1.6rem; letter-spacing: 0.2px; }
+.hero-sub { margin: 0; color: var(--text-light); }
+.hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.hero-card { background: var(--card-bg); border-radius: var(--border-radius); box-shadow: var(--card-shadow); padding: 16px; display: flex; flex-direction: column; justify-content: space-between; }
+.hero-metrics { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; margin-bottom: 10px; }
+.metric { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 10px; text-align: center; }
+.metric-label { font-size: 0.8rem; color: var(--text-light); }
+.metric-value { font-weight: 600; }
+.hero-steps { display: grid; gap: 8px; }
+.step { display: flex; align-items: center; gap: 8px; }
+.step-num { width: 22px; height: 22px; border-radius: 50%; background: var(--primary); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; }
+
+.feature-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.feature { background: var(--card-bg); border-radius: var(--border-radius); box-shadow: var(--card-shadow); padding: 14px; }
+.feature h4 { margin: 0 0 6px; }
+
+@media (max-width: 900px) {
+  .hero { grid-template-columns: 1fr; }
+  .feature-grid { grid-template-columns: 1fr; }
 }

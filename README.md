@@ -7,50 +7,22 @@ Terminology
 
 ---
 
-## Deliverables (what’s included)
-- Backend API (FastAPI) with:
-  - Teach/chat endpoints with retrieval‑augmented generation (hybrid dense+BM25; MMR diversification; optional query rewriting)
-  - AutoLearn streaming endpoint (Server‑Sent Events) with judge cascade and cache
-  - Upload/ingest endpoints (text/url) with chunking, embedding, FAISS indexing
-  - Health endpoints (`/llm_health`, `/judge_health`), metrics (`/metrics/performance`)
-  - Background task processor for long‑running jobs
-- Agent services:
-  - Optimized AutoLearn scorer: in‑memory + SQLite cache; fast→heavy judge cascade; error instrumentation
-  - Embedding service (SentenceTransformers if available; deterministic fallback when offline)
-  - Vector store (FAISS local index)
-  - Teaching orchestration (RAG + few‑shot with accepted examples)
-- Data layer:
-  - SQLite with SQLAlchemy models for Users/Sessions/Interactions
-  - Synthetic examples store
-  - EvaluationCache and PerformanceMetrics tables
-- Frontend (vanilla JS/CSS/HTML):
-  - Minimalist Chat + integrated Upload (collapsible) + AutoLearn Observer
-  - Live SSE observer with granular events, copy/download log, progress bar, and judge rationales
-  - Local persistence (chat history, optimization versions, theme, help seen)
-  - Global Help guide (floating “?”) with consistent modal UX across pages
-- Dev/test assets:
-  - End‑to‑end test script, sample integration tests
-  - Automated table creation on startup; standalone `migrate_db.py` kept for manual runs
+## Absolute Zero (AZ): Reinforced Self‑play Reasoning with Zero Data
 
----
+Absolute Zero improves reasoning without labeled data via self‑play and self‑evaluation with reinforcement‑style acceptance. The agent proposes candidates, scores them under internal rules and an LLM‑as‑judge, and keeps only the highest‑quality outputs.
 
-## Absolute Zero (AZ) vs our AutoLearn
-
-Absolute Zero (AZ) refers to a family of methods that improve reasoning without labeled data by self‑play/self‑evaluation and reinforcement‑style acceptance. In practice:
-- The agent proposes tasks/answers, evaluates quality with internal rules/LLM‑as‑judge, and reinforces by keeping the best outputs.
-
-What we implement now
+What we ship now
 - Self‑generation of Q/A examples by topic
-- Multi‑check validation + LLM‑as‑a‑judge scoring
-- Auto‑acceptance with a configurable threshold and judge cascade
-- Caching of evaluations (memory + SQLite) to make self‑play affordable locally
-- Reuse of accepted examples as few‑shots at inference (prompt‑level “learning”)
+- Multi‑check validators + LLM‑as‑judge scoring with fast→heavy judge cascade
+- Auto‑acceptance using a configurable threshold and judge margin
+- Cached evaluations (RAM + SQLite) to keep self‑play affordable locally
+- Reuse of accepted examples as few‑shots at inference
 
-What we intentionally do not do by default
-- We do not update base model weights every iteration. For local UX we focus on retrieval, prompting, and caching. A PEFT fine‑tuning step can be added to adapt weights to your accepted data when desired.
+Not default (by design)
+- No iterative weight updates. We optimize retrieval, prompting, and caching for local UX.
 
-Optional PEFT track (planned/opt‑in)
-- Export accepted examples → LoRA/QLoRA → adapter weights → serve via Ollama or another runtime that supports adapters.
+Optional PEFT (opt‑in)
+- Export accepted examples → LoRA/QLoRA → adapter weights → serve via an Ollama‑compatible runtime
 
 ---
 
@@ -146,18 +118,19 @@ Automations
 
 ---
 
-## Performance & reliability
-- Judge cascade: fast judge for most cases; escalate to heavy judge only when within `MZ_JUDGE_MARGIN` or low‑confidence
-- Caching: in‑memory + SQLite for judge/evaluations to avoid recomputation
-- Robust parsing of model JSON; retries with backoff; informative SSE errors and suggestions
-- Background processor for long tasks (non‑blocking UI)
+## Metrics to track
 
-Request logging
-- Every Ollama call is written to `data/ollama_requests.log` (JSONL): timestamp, duration, model, endpoint, status (success/error), prompt size, temperature, and raw response metadata when available. Use it to compute latency distributions and failure rates, or to compare configurations.
+- Acceptance rate: accepted / generated
+- Judge escalation rate: fraction escalated to heavy judge
+- Cache hit rate: evaluations served from cache
+- Latency p50/p95 (ms): generation; judge (fast/heavy)
+- Average attempts per accepted example
+- Failure rate: validation or judge errors
+- Throughput: examples accepted per minute
 
-Tuning tips
-- For slow GPUs/CPUs, keep only a fast judge and raise `MZ_JUDGE_MARGIN` slightly to reduce heavy calls.
-- Reduce `MZ_RAG_TOP_K` to lower latency on retrieval‑heavy queries.
+Observability
+- GET `/metrics/performance` for aggregate timings and cache stats
+- JSONL request log at `data/ollama_requests.log` with timestamp, duration_ms, model, endpoint, status, prompt_chars, temperature, meta
 
 ---
 

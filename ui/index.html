@@ -25,16 +25,11 @@
           <button class="nav-btn" data-page="learn">
             <i class="fas fa-comments"></i> Chat
           </button>
-          <button class="nav-btn" data-page="about">
-            <i class="fas fa-info-circle"></i> About
-          </button>
           <button class="nav-btn" data-page="azl">
-            <i class="fas fa-flask"></i> AutoLearn
+            <i class="fas fa-flask"></i> Absolute Zero
           </button>
         </nav>
         <div class="header-controls">
-          <div id="healthLLM" class="health-dot" title="LLM: unknown"></div>
-          <div id="healthJudge" class="health-dot alt" title="Judge: unknown"></div>
           <!-- TTS Toggle -->
           <button id="ttsToggle" class="feature-toggle" title="Text-to-speech">
             <i class="fas fa-volume-up"></i>
@@ -50,33 +45,52 @@
       <!-- Home Page -->
       <div class="page active" id="home-page">
         <div class="container">
-          <div class="card glass">
-            <div class="card-header">
-              <h3>Welcome to MentorZero</h3>
-            </div>
-            <div class="card-body">
-              <p class="mb-3">MentorZero is an offline‑first adaptive tutor. It combines your documents (RAG) with self‑learned examples (AutoLearn) to deliver better answers in Chat.</p>
-              <h4 class="mb-2">Get started</h4>
-              <ol class="compact-list mb-3">
-                <li><strong>Upload</strong> some notes below on the Chat page (merged into Chat).</li>
-                <li><strong>AutoLearn</strong> a topic to create high‑quality Q&A examples.</li>
-                <li><strong>Chat</strong> — ask questions and get cited, structured answers.</li>
-              </ol>
-              <div class="stats-grid mb-3">
-                <div class="stat-card"><div class="stat-value">Private</div><div class="stat-label">Runs locally</div></div>
-                <div class="stat-card"><div class="stat-value">RAG</div><div class="stat-label">Cited answers</div></div>
-                <div class="stat-card"><div class="stat-value">AZL</div><div class="stat-label">Self‑improving</div></div>
-              </div>
-              <div class="form-actions">
+          <section class="hero">
+            <div class="hero-text">
+              <h2 class="hero-title">Local-first tutoring that learns from you</h2>
+              <p class="hero-sub">Agentic RAG + Absolute Zero self-play for precise, cited answers — fully offline with Ollama.</p>
+              <div class="hero-actions">
                 <button class="btn btn-primary" onclick="document.querySelector('.nav-btn[data-page=learn]').click()">
-                  <i class="fas fa-comments"></i> Go to Chat
+                  <i class="fas fa-comments"></i> Start Chatting
                 </button>
                 <button class="btn btn-outline" onclick="document.querySelector('.nav-btn[data-page=azl]').click()">
-                  <i class="fas fa-flask"></i> Open AutoLearn
+                  <i class="fas fa-flask"></i> Run Absolute Zero
                 </button>
               </div>
+              <div class="mini-badges">
+                <span class="mini-badge">Private • Local</span>
+                <span class="mini-badge">RAG • Citations</span>
+                <span class="mini-badge">Self‑play Acceptance</span>
+              </div>
             </div>
-          </div>
+            <div class="hero-card">
+              <div class="hero-metrics">
+                <div class="metric"><div class="metric-label">RAG</div><div class="metric-value">Top‑K, MMR</div></div>
+                <div class="metric"><div class="metric-label">Judge</div><div class="metric-value">Fast→Heavy</div></div>
+                <div class="metric"><div class="metric-label">Cache</div><div class="metric-value">RAM + SQLite</div></div>
+              </div>
+              <div class="hero-steps">
+                <div class="step"><span class="step-num">1</span> Upload notes or Fetch URL</div>
+                <div class="step"><span class="step-num">2</span> Ask anything in Chat</div>
+                <div class="step"><span class="step-num">3</span> Improve with Absolute Zero</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="feature-grid">
+            <div class="feature">
+              <h4>Agentic RAG</h4>
+              <p>Hybrid dense+BM25 retrieval with MMR diversification. Passes citations into prompts for grounded answers.</p>
+            </div>
+            <div class="feature">
+              <h4>Absolute Zero</h4>
+              <p>Self-generate, self-evaluate, and accept only high‑quality examples. Reuse accepted examples as few‑shots.</p>
+            </div>
+            <div class="feature">
+              <h4>Local & Private</h4>
+              <p>Runs on your machine with Ollama. Data stays local; metric logs are stored in <code>data/</code>.</p>
+            </div>
+          </section>
         </div>
       </div>
 
@@ -211,8 +225,11 @@
                   <button id="scrapeBtn" class="btn btn-outline" title="Fetch URL and ingest">
                     <i class="fas fa-globe"></i> Fetch URL
                   </button>
+                  <button id="clearKbBtn" class="btn btn-outline" title="Clear indexed knowledge base">
+                    <i class="fas fa-trash"></i> Clear KB
+                  </button>
                   <label class="switch">
-                    <input type="checkbox" id="autoRerunTeach" checked>
+                    <input type="checkbox" id="autoRerunTeach">
                     <span class="slider"></span>
                     <span class="switch-label">Auto re-run teach</span>
                   </label>
@@ -227,55 +244,19 @@
 
       <!-- Upload Page removed: merged into Chat -->
 
-      <!-- About Page -->
-      <div class="page" id="about-page">
-        <div class="container">
-          <div class="card glass">
-            <div class="card-header">
-              <h3>About MentorZero</h3>
-            </div>
-            <div class="card-body">
-              <p class="mb-3">MentorZero is an offline‑first, zero‑cost adaptive tutoring agent. It runs locally via Ollama and helps you learn faster with personalized teaching, live context from your own uploads, and self‑improving AutoLearn.</p>
-              <div class="stats-grid mb-3">
-                <div class="stat-card"><div class="stat-value">Local</div><div class="stat-label">Private by design</div></div>
-                <div class="stat-card"><div class="stat-value">RAG</div><div class="stat-label">Cited answers</div></div>
-                <div class="stat-card"><div class="stat-value">AutoLearn</div><div class="stat-label">Self‑improving</div></div>
-              </div>
-              <h4 class="mb-2">How to use</h4>
-              <ul class="compact-list mb-3">
-                <li><strong>Chat:</strong> ask a question; answers stream with citations when available.</li>
-                <li><strong>Upload:</strong> paste text to index; AutoLearn shows generation and judging live.</li>
-              </ul>
-              <h4 class="mb-2">Keyboard shortcuts</h4>
-              <ul class="compact-list list-two-col mb-3 text-sm">
-                <li><span class="kbd">Alt</span> + <span class="kbd">T</span> cycle tabs (Chat → Upload → About → AutoLearn)</li>
-                <li><span class="kbd">Alt</span> + <span class="kbd">L</span> toggle theme</li>
-                <li><span class="kbd">/</span> focus Chat input</li>
-              </ul>
-              <h4 class="mb-2">Stack</h4>
-              <ul class="compact-list mb-1 text-sm">
-                <li><strong>Local LLM:</strong> Ollama (configurable)</li>
-                <li><strong>Backend:</strong> FastAPI • FAISS • SSE</li>
-                <li><strong>Frontend:</strong> Vanilla JS</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </div>
-      
       <!-- AZL Page -->
       <div class="page" id="azl-page">
         <div class="container">
           <div class="card azl-card">
             <div class="card-header">
-              <h3>AutoLearn</h3>
+              <h3>Absolute Zero</h3>
               <button class="info-btn" title="What is AZL?">
                 <i class="fas fa-info-circle"></i>
               </button>
             </div>
             <div class="card-body">
               <div class="info-tooltip hidden">
-                AZL is a self-improvement mechanism that allows MentorZero to generate, validate, and incorporate synthetic learning examples. This helps the system get better over time with minimal human intervention.
+                AZ is a self-improvement mechanism that allows MentorZero to generate, validate, and incorporate synthetic learning examples. This helps the system get better over time with minimal human intervention.
               </div>
               
               <!-- AZL Proposal Form -->
@@ -284,7 +265,7 @@
                   <h4 class="azl-title">Generate Learning Examples</h4>
                   <div class="azl-head-actions">
                     <button id="autolearnBtn" type="button" class="btn btn-outline" title="Self-generate, self-judge, auto-accept">
-                      <i class="fas fa-robot"></i> AutoLearn
+                      <i class="fas fa-robot"></i> Absolute Zero
                     </button>
                   </div>
                 </div>

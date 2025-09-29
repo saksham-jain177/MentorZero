@@ -48,6 +48,12 @@ class FaissStore:
 		with open(self.meta_path, "w", encoding="utf-8") as f:
 			json.dump({str(k): v for k, v in self.meta.items()}, f)
 
+	def clear_all(self) -> None:
+		"""Reset the FAISS index and metadata store."""
+		self.index = self._new_index()
+		self.meta = {}
+		self._persist()
+
 	@staticmethod
 	def _normalize(vecs: List[List[float]]) -> List[List[float]]:
 		import numpy as np  # type: ignore

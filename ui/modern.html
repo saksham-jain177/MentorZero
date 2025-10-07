@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MentorZero - AI Research Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --accent: #06b6d4;
+            --dark: #0f172a;
+            --dark-lighter: #1e293b;
+            --text: #e2e8f0;
+            --text-dim: #94a3b8;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, var(--dark) 0%, #1a1f3a 100%);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated background */
+        .bg-animation {
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            z-index: -1;
+            opacity: 0.1;
+        }
+
+        .bg-animation::before {
+            content: '';
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, var(--primary) 0%, transparent 70%);
+            animation: float 20s infinite ease-in-out;
+        }
+
+        .bg-animation::after {
+            content: '';
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, var(--secondary) 0%, transparent 70%);
+            right: -200px;
+            bottom: -200px;
+            animation: float 25s infinite ease-in-out reverse;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(30px, -50px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+        }
+
+        /* Header */
+        .header {
+            padding: 2rem;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: inline-block;
+        }
+
+        .header .subtitle {
+            color: var(--text-dim);
+            margin-top: 0.5rem;
+        }
+
+        /* Main container */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Agent Status Bar */
+        .agents-status {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 2rem;
+            padding: 1rem;
+            background: rgba(15, 23, 42, 0.3);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .agent-indicator {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .agent-orb {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2));
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .agent-orb::before {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            background: conic-gradient(from 180deg, transparent, var(--primary), transparent);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            animation: rotate 2s linear infinite;
+        }
+
+        .agent-orb.active::before {
+            opacity: 1;
+        }
+
+        @keyframes rotate {
+            to { transform: rotate(360deg); }
+        }
+
+        .agent-indicator.active .agent-orb {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            box-shadow: 0 0 30px rgba(99, 102, 241, 0.5);
+            transform: scale(1.1);
+        }
+
+        .agent-label {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            text-align: center;
+            transition: color 0.3s ease;
+        }
+
+        .agent-indicator.active .agent-label {
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .agent-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+
+        .agent-card.active::before {
+            transform: scaleX(1);
+        }
+
+        .agent-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 40px rgba(99, 102, 241, 0.2);
+        }
+
+        .agent-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin-bottom: 1rem;
+        }
+
+        .agent-name {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .agent-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-dim);
+            font-size: 0.9rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-dim);
+        }
+
+        .status-dot.active {
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Query Input Section */
+        .query-section {
+            background: rgba(30, 41, 59, 0.5);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .input-group {
+            position: relative;
+            margin-bottom: 1.5rem;
+        }
+
+        .query-input {
+            width: 100%;
+            padding: 1.5rem 3rem 1.5rem 1.5rem;
+            background: rgba(15, 23, 42, 0.5);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            color: var(--text);
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+        }
+
+        .query-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+        }
+
+        .query-input::placeholder {
+            color: var(--text-dim);
+        }
+
+        /* Execution Mode Toggle */
+        .mode-toggle {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .mode-option {
+            flex: 1;
+            padding: 1rem;
+            background: rgba(15, 23, 42, 0.5);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .mode-option:hover {
+            border-color: var(--primary);
+        }
+
+        .mode-option.selected {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .btn {
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-secondary {
+            background: rgba(30, 41, 59, 0.5);
+            color: var(--text);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--primary);
+        }
+
+        /* Results Section */
+        .results-section {
+            margin-top: 2rem;
+        }
+
+        .result-card {
+            background: rgba(30, 41, 59, 0.5);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            animation: slideIn 0.5s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .result-agent {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .result-time {
+            color: var(--text-dim);
+            font-size: 0.9rem;
+        }
+
+        .result-content {
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        /* Loading Animation */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .loading-spinner {
+            width: 48px;
+            height: 48px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* System Stats */
+        .system-stats {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: rgba(30, 41, 59, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1rem;
+            min-width: 200px;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .stat-label {
+            color: var(--text-dim);
+        }
+
+        .stat-value {
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        /* Progress Bar */
+        .progress-bar {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .agents-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .mode-toggle {
+                flex-direction: column;
+            }
+
+            .action-buttons {
+                flex-direction: column;
+            }
+
+            .system-stats {
+                position: static;
+                margin-top: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-animation"></div>
+    
+    <header class="header">
+        <h1>MentorZero</h1>
+        <p class="subtitle">Multi-Agent AI Research Assistant</p>
+    </header>
+
+    <div class="container">
+        <!-- Agent Status Bar - Much cleaner than cards -->
+        <div class="agents-status">
+            <div class="agent-indicator" id="search-agent">
+                <div class="agent-orb">🔍</div>
+                <div class="agent-label">Search</div>
+            </div>
+
+            <div class="agent-indicator" id="research-agent">
+                <div class="agent-orb">📚</div>
+                <div class="agent-label">Research</div>
+            </div>
+
+            <div class="agent-indicator" id="writer-agent">
+                <div class="agent-orb">✍️</div>
+                <div class="agent-label">Writer</div>
+            </div>
+
+            <div class="agent-indicator" id="optimizer-agent">
+                <div class="agent-orb">⚡</div>
+                <div class="agent-label">Optimizer</div>
+            </div>
+
+            <div class="agent-indicator" id="verifier-agent">
+                <div class="agent-orb">✅</div>
+                <div class="agent-label">Verifier</div>
+            </div>
+        </div>
+
+        <!-- Query Section -->
+        <div class="query-section">
+            <div class="input-group">
+                <input type="text" 
+                       class="query-input" 
+                       id="query-input"
+                       placeholder="Ask anything... e.g., 'Research the latest advances in quantum computing'"
+                       autocomplete="off">
+            </div>
+
+            <div class="mode-toggle">
+                <div class="mode-option selected" data-mode="adaptive">
+                    <strong>🧠 Adaptive</strong>
+                    <div style="font-size: 0.85rem; color: var(--text-dim); margin-top: 0.25rem;">
+                        Smart resource allocation
+                    </div>
+                </div>
+                <div class="mode-option" data-mode="parallel">
+                    <strong>⚡ Parallel</strong>
+                    <div style="font-size: 0.85rem; color: var(--text-dim); margin-top: 0.25rem;">
+                        Maximum speed
+                    </div>
+                </div>
+                <div class="mode-option" data-mode="sequential">
+                    <strong>📝 Sequential</strong>
+                    <div style="font-size: 0.85rem; color: var(--text-dim); margin-top: 0.25rem;">
+                        Low resource usage
+                    </div>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn btn-primary" id="research-btn">
+                    <span>🚀</span>
+                    <span>Start Research</span>
+                </button>
+                <button class="btn btn-secondary" id="clear-btn">
+                    <span>🗑️</span>
+                    <span>Clear</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div class="loading" id="loading">
+            <div class="loading-spinner"></div>
+            <p>Agents are working...</p>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- Results -->
+        <div class="results-section" id="results"></div>
+    </div>
+
+    <!-- System Stats -->
+    <div class="system-stats">
+        <h4 style="margin-bottom: 1rem; font-size: 0.9rem; text-transform: uppercase; color: var(--text-dim);">
+            System Status
+        </h4>
+        <div class="stat-item">
+            <span class="stat-label">CPU</span>
+            <span class="stat-value" id="cpu-stat">12%</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Memory</span>
+            <span class="stat-value" id="memory-stat">45%</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Active Agents</span>
+            <span class="stat-value" id="agents-stat">0/4</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Mode</span>
+            <span class="stat-value" id="mode-stat">Adaptive</span>
+        </div>
+    </div>
+
+    <script>
+        // API base URL
+        const API_BASE = 'http://localhost:8000/api/v2';
+
+        // Agent activation animation
+        function activateAgent(agentId) {
+            const indicator = document.getElementById(agentId);
+            if (indicator) {
+                indicator.classList.add('active');
+                const orb = indicator.querySelector('.agent-orb');
+                if (orb) orb.classList.add('active');
+            }
+        }
+
+        function deactivateAgent(agentId) {
+            const indicator = document.getElementById(agentId);
+            if (indicator) {
+                indicator.classList.remove('active');
+                const orb = indicator.querySelector('.agent-orb');
+                if (orb) orb.classList.remove('active');
+            }
+        }
+
+        // Mode selection
+        document.querySelectorAll('.mode-option').forEach(option => {
+            option.addEventListener('click', function() {
+                document.querySelectorAll('.mode-option').forEach(o => o.classList.remove('selected'));
+                this.classList.add('selected');
+                document.getElementById('mode-stat').textContent = 
+                    this.dataset.mode.charAt(0).toUpperCase() + this.dataset.mode.slice(1);
+            });
+        });
+
+        // Main action button - ACTUALLY CALLS THE API
+        document.getElementById('research-btn').addEventListener('click', async function() {
+            const query = document.getElementById('query-input').value.trim();
+            if (!query) {
+                alert('Please enter a query');
+                return;
+            }
+
+            const mode = document.querySelector('.mode-option.selected').dataset.mode;
+            
+            // Disable button during processing
+            this.disabled = true;
+            
+            // Show loading
+            document.getElementById('loading').classList.add('active');
+            document.getElementById('results').innerHTML = '';
+
+            try {
+                // Call the actual API
+                const response = await fetch(`${API_BASE}/research`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        mode: mode,
+                        depth: 'standard',
+                        include_sources: true
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                // Display real results
+                displayResults(data);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                addResult('error', `Error: ${error.message}. Make sure the backend is running.`);
+            } finally {
+                // Hide loading and re-enable button
+                document.getElementById('loading').classList.remove('active');
+                this.disabled = false;
+                
+                // Deactivate all agents
+                ['search-agent', 'research-agent', 'writer-agent', 'optimizer-agent', 'verifier-agent'].forEach(deactivateAgent);
+            }
+        });
+
+        function displayResults(data) {
+            const resultsDiv = document.getElementById('results');
+            
+            // Show execution summary
+            const summaryCard = document.createElement('div');
+            summaryCard.className = 'result-card';
+            summaryCard.innerHTML = `
+                <div class="result-header">
+                    <div class="result-agent" style="color: var(--success);">
+                        <span>✅ Research Complete</span>
+                    </div>
+                    <div class="result-time">Total time: ${data.execution_time?.toFixed(2) || 0}s</div>
+                </div>
+                <div class="result-content">
+                    <strong>Query:</strong> ${data.query || ''}<br>
+                    <strong>Mode:</strong> ${data.mode || 'adaptive'}<br>
+                    <strong>Agents Used:</strong> ${data.agents_used?.join(', ') || 'None'}
+                </div>
+            `;
+            resultsDiv.appendChild(summaryCard);
+            
+            // Show individual agent results
+            if (data.results && Array.isArray(data.results)) {
+                data.results.forEach(result => {
+                    addDetailedResult(result);
+                });
+            }
+            
+            // Update system stats if available
+            if (data.system_stats) {
+                updateSystemStats(data.system_stats);
+            }
+        }
+
+        function addDetailedResult(result) {
+            const resultsDiv = document.getElementById('results');
+            const resultCard = document.createElement('div');
+            resultCard.className = 'result-card';
+            
+            // Format output based on type
+            let outputContent = '';
+            if (result.output) {
+                if (typeof result.output === 'object') {
+                    outputContent = `<pre>${JSON.stringify(result.output, null, 2)}</pre>`;
+                } else {
+                    outputContent = result.output;
+                }
+            }
+            
+            resultCard.innerHTML = `
+                <div class="result-header">
+                    <div class="result-agent">
+                        <span>${result.agent} - ${result.task}</span>
+                    </div>
+                    <div class="result-time">Duration: ${result.duration?.toFixed(2) || 0}s</div>
+                </div>
+                <div class="result-content">${outputContent}</div>
+            `;
+            resultsDiv.appendChild(resultCard);
+        }
+
+        function addResult(agentId, content) {
+            const resultsDiv = document.getElementById('results');
+            const resultCard = document.createElement('div');
+            resultCard.className = 'result-card';
+            
+            const agentNames = {
+                'search-agent': 'Search Agent',
+                'research-agent': 'Research Agent',
+                'writer-agent': 'Writing Agent',
+                'optimizer-agent': 'Optimization Agent',
+                'verifier-agent': 'Verification Agent',
+                'error': '⚠️ Error'
+            };
+
+            resultCard.innerHTML = `
+                <div class="result-header">
+                    <div class="result-agent">
+                        <span>${agentNames[agentId] || agentId}</span>
+                    </div>
+                    <div class="result-time">${new Date().toLocaleTimeString()}</div>
+                </div>
+                <div class="result-content">${content}</div>
+            `;
+            resultsDiv.appendChild(resultCard);
+        }
+
+        // Clear button with confirmation
+        document.getElementById('clear-btn').addEventListener('click', function() {
+            if (document.getElementById('results').innerHTML.trim() !== '') {
+                if (!confirm('Are you sure you want to clear all results?')) {
+                    return;
+                }
+            }
+            document.getElementById('query-input').value = '';
+            document.getElementById('results').innerHTML = '';
+        });
+
+        function updateSystemStats(stats) {
+            if (stats.cpu_percent !== undefined) {
+                document.getElementById('cpu-stat').textContent = Math.round(stats.cpu_percent) + '%';
+            }
+            if (stats.memory_percent !== undefined) {
+                document.getElementById('memory-stat').textContent = Math.round(stats.memory_percent) + '%';
+            }
+            if (stats.active_agents !== undefined && stats.max_agents !== undefined) {
+                document.getElementById('agents-stat').textContent = `${stats.active_agents}/${stats.max_agents}`;
+            }
+        }
+
+        // Fetch real system stats periodically
+        async function fetchSystemStats() {
+            try {
+                const response = await fetch(`${API_BASE}/system/stats`);
+                if (response.ok) {
+                    const stats = await response.json();
+                    updateSystemStats(stats);
+                }
+            } catch (error) {
+                console.error('Failed to fetch system stats:', error);
+            }
+        }
+
+        // Update stats every 5 seconds
+        setInterval(fetchSystemStats, 5000);
+        fetchSystemStats(); // Initial fetch
+
+        // Enter key support
+        document.getElementById('query-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !document.getElementById('research-btn').disabled) {
+                document.getElementById('research-btn').click();
+            }
+        });
+
+        // WebSocket for real-time updates (optional)
+        function connectWebSocket() {
+            const ws = new WebSocket('ws://localhost:8000/api/v2/ws/research');
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'agent_update') {
+                    // Activate/deactivate agents in real-time
+                    if (data.status === 'started') {
+                        activateAgent(data.agent + '-agent');
+                    } else {
+                        deactivateAgent(data.agent + '-agent');
+                    }
+                }
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+            
+            return ws;
+        }
+
+        // Initialize WebSocket (optional - comment out if not needed)
+        // const ws = connectWebSocket();
+    </script>
+</body>
+</html>

@@ -81,12 +81,14 @@ class Settings(BaseSettings):
     # Database settings
     db_path: str = "./data/mentorzero.db"
     
-    # Embeddings settings
-    embedding_model_name: str = "all-MiniLM-L6-v2"
+    # Embeddings settings (default to deterministic to avoid native crashes on some setups)
+    embedding_model_name: str = "deterministic"
     
     # FAISS settings
     faiss_index_path: str = "./data/faiss.index"
     faiss_meta_path: str = "./data/faiss_meta.json"
+    faiss_index_type: str = "flat"  # flat | hnsw
+    faiss_hnsw_ef_search: int = 50
     
     # Voice settings
     whisper_model: Optional[str] = "tiny"
@@ -107,6 +109,9 @@ class Settings(BaseSettings):
     rag_chunk_overlap: int = 120
     rag_bm25_k1: float = 1.5
     rag_bm25_b: float = 0.75
+    rag_semantic_chunking: bool = True
+    rag_use_reranker: bool = False
+    rag_disable_dense: bool = True
     
     # Pydantic v2 configuration
     model_config = SettingsConfigDict(

@@ -1,0 +1,17 @@
+{
+    "venvPath": ".",
+    "venv": "venv",
+    "pythonVersion": "3.11",
+    "pythonPlatform": "Windows",
+    "include": [
+        "api",
+        "agent"
+    ],
+    "exclude": [
+        "venv",
+        "**/__pycache__"
+    ],
+    "typeCheckingMode": "basic",
+    "reportMissingImports": "none",
+    "reportMissingModuleSource": "none"
+}

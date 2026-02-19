@@ -120,7 +120,7 @@ class AgentOrchestrator:
         
         if mode == ExecutionMode.ADAPTIVE:
             mode = self._decide_execution_mode(tasks)
-            print(f"📊 Adaptive mode selected: {mode.value}")
+            print(f"[Adaptive] Mode selected: {mode.value}")
         
         if mode == ExecutionMode.PARALLEL:
             return await self._execute_parallel(tasks, on_task_start, on_task_complete)
@@ -163,7 +163,7 @@ class AgentOrchestrator:
             
             # Wait for resources if needed
             while not self.resource_monitor.can_spawn_agent():
-                print("⏳ Waiting for resources...")
+                print("[wait] Waiting for resources...")
                 await asyncio.sleep(1)
             
             # Execute batch in parallel
@@ -207,7 +207,7 @@ class AgentOrchestrator:
                 skip = False
                 for dep in task.requires:
                     if dep not in [r.task_type for r in results if r.success]:
-                        print(f"⚠️ Skipping {task.task_type}: dependency {dep} not met")
+                        print(f"[skip] Skipping {task.task_type}: dependency {dep} not met")
                         skip = True
                         break
                 if skip: continue
@@ -429,15 +429,15 @@ async def demo_orchestrator():
     
     # Show execution plan
     plan = orchestrator.get_execution_plan(tasks)
-    print("\n📋 Execution Plan:")
+    print("\nExecution Plan:")
     print(json.dumps(plan, indent=2))
     
     # Execute tasks
-    print("\n🎯 Executing tasks...")
+    print("\nExecuting tasks...")
     results = await orchestrator.execute_tasks(tasks, mode=ExecutionMode.ADAPTIVE)
     
     # Show results
-    print("\n📊 Results:")
+    print("\nResults:")
     for result in results:
         status = "✅" if result.success else "❌"
         print(f"{status} {result.agent_name}.{result.task_type}: {result.duration:.2f}s")

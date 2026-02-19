@@ -2,7 +2,7 @@
 New Agent-based API Routes
 Handles multi-agent orchestration and research workflows
 """
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, WebSocket
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from enum import Enum
@@ -217,13 +217,14 @@ async def execute_custom_workflow(tasks: List[Dict[str, Any]]):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+
 @router.websocket("/ws/research")
-async def research_websocket(websocket):
+async def research_websocket(websocket: WebSocket):
     """
     WebSocket endpoint for real-time research updates
     """
     await websocket.accept()
-    print("WebSocket connection accepted")
     
     try:
         while True:
@@ -263,12 +264,26 @@ async def research_websocket(websocket):
 
             # Callback for task completion
             async def on_complete(result: TaskResult):
+                import dataclasses, json
+                from datetime import datetime
+                output = result.output
+                # Safely convert output to a JSON-serializable form
+                if result.success and output is not None:
+                    if dataclasses.is_dataclass(output):
+                        # Convert dataclass to dict, serializing datetime fields as ISO strings
+                        raw = dataclasses.asdict(output)
+                        output = json.loads(json.dumps(raw, default=lambda o: o.isoformat() if isinstance(o, datetime) else str(o)))
+                    elif hasattr(output, '__dict__'):
+                        raw = output.__dict__
+                        output = json.loads(json.dumps(raw, default=lambda o: o.isoformat() if isinstance(o, datetime) else str(o)))
+                    elif not isinstance(output, (str, int, float, bool, list, dict)):
+                        output = str(output)
                 await websocket.send_json({
                     "type": "agent_update",
                     "agent": result.agent_name,
                     "task": result.task_type,
                     "status": "completed" if result.success else "failed",
-                    "output": result.output if result.success else None,
+                    "output": output if result.success else None,
                     "error": result.error if not result.success else None,
                     "duration": result.duration
                 })

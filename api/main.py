@@ -3,7 +3,7 @@ MentorZero - Multi-Agent AI Research Assistant
 Main FastAPI application
 """
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
@@ -20,9 +20,15 @@ logger = logging.getLogger(__name__)
 # Create FastAPI app
 app = FastAPI(
     title="MentorZero",
-    description="Multi-Agent AI Research Assistant 🚀",
+    description="Multi-Agent AI Research Assistant",
     version="2.0.0"
 )
+
+@app.websocket("/ws_test")
+async def websocket_test(websocket: WebSocket):
+    await websocket.accept()
+    await websocket.send_text("Hello from test")
+    await websocket.close()
 
 # Configure CORS
 app.add_middleware(
@@ -67,7 +73,7 @@ async def startup_event():
 # Shutdown event
 @app.on_event("shutdown")
 async def shutdown_event():
-    logger.info("👋 Shutting down MentorZero...")
+    logger.info("Shutting down MentorZero...")
 
 if __name__ == "__main__":
     import uvicorn

@@ -2,24 +2,24 @@
 New Agent-based API Routes
 Handles multi-agent orchestration and research workflows
 """
-from fastapi import APIRouter, HTTPException, BackgroundTasks, WebSocket
-from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
+from fastapi import APIRouter, HTTPException, BackgroundTasks, WebSocket  # type: ignore[import-untyped]
+from pydantic import BaseModel  # type: ignore[import-untyped]
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from enum import Enum
 import asyncio
 
-from agent.core.orchestrator import (
-    AgentOrchestrator, 
-    AgentTask, 
+from agent.core.orchestrator import (  # type: ignore[import-untyped]
+    AgentOrchestrator,
+    AgentTask,
     ExecutionMode,
     TaskResult,
     SearchAgent,
     WritingAgent,
     OptimizationAgent
 )
-from agent.core.research_agent import ResearchAgent
-from agent.core.hyde_retriever import HyDERetriever
-from agent.core.capabilities import (
+from agent.core.research_agent import ResearchAgent  # type: ignore[import-untyped]
+from agent.core.hyde_retriever import HyDERetriever  # type: ignore[import-untyped]
+from agent.core.capabilities import (  # type: ignore[import-untyped]
     CodeGenerationAgent,
     LearningAgent,
     AnalysisAgent,
@@ -55,6 +55,9 @@ class ResearchRequest(BaseModel):
     depth: str = "standard"  # quick, standard, deep
     include_sources: bool = True
     max_agents: Optional[int] = None
+    
+    if TYPE_CHECKING:
+        def __init__(self, **kwargs: Any) -> None: ...
 
 class ResearchResponse(BaseModel):
     query: str
@@ -63,12 +66,18 @@ class ResearchResponse(BaseModel):
     agents_used: List[str]
     mode: str
     system_stats: Dict[str, Any]
+    
+    if TYPE_CHECKING:
+        def __init__(self, **kwargs: Any) -> None: ...
 
 class AgentStatus(BaseModel):
     agent_name: str
     status: str
     current_task: Optional[str]
     tasks_completed: int
+    
+    if TYPE_CHECKING:
+        def __init__(self, **kwargs: Any) -> None: ...
 
 # API Endpoints
 @router.post("/research", response_model=ResearchResponse)

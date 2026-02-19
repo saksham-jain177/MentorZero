@@ -1,0 +1,12 @@
+{
+  "source_directories": [
+    {
+      "import_root": "."
+    }
+  ],
+  "search_path": [
+    "venv/Lib/site-packages"
+  ],
+  "python_version": "3.11",
+  "strict_handling_of_missing_imports": false
+}

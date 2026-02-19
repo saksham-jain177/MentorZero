@@ -1,8 +1,8 @@
 {
+    "pythonPath": "venv/Scripts/python.exe",
     "venvPath": ".",
     "venv": "venv",
     "pythonVersion": "3.11",
-    "pythonPlatform": "Windows",
     "include": [
         "api",
         "agent"
@@ -12,6 +12,7 @@
         "**/__pycache__"
     ],
     "typeCheckingMode": "basic",
+    "useLibraryCodeForTypes": true,
     "reportMissingImports": "none",
     "reportMissingModuleSource": "none"
 }

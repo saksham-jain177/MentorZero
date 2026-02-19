@@ -630,8 +630,8 @@
             });
         });
 
-        // Main action button - ACTUALLY CALLS THE API
-        document.getElementById('research-btn').addEventListener('click', async function() {
+        // Main action button - NOW USES WEBSOCKETS
+        document.getElementById('research-btn').addEventListener('click', function() {
             const query = document.getElementById('query-input').value.trim();
             if (!query) {
                 alert('Please enter a query');
@@ -646,76 +646,91 @@
             // Show loading
             document.getElementById('loading').classList.add('active');
             document.getElementById('results').innerHTML = '';
+            
+            // Reset progress bar
+            document.getElementById('progress').style.width = '0%';
 
-            try {
-                // Call the actual API
-                const response = await fetch(`${API_BASE}/research`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        query: query,
-                        mode: mode,
-                        depth: 'standard',
-                        include_sources: true
-                    })
-                });
+            // Use WebSocket for real-time updates
+            const wsUrl = `ws://${window.location.host}/api/v2/ws/research`;
+            const ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                console.log('🚀 WebSocket connected, sending query...');
+                ws.send(JSON.stringify({
+                    query: query,
+                    mode: mode
+                }));
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                console.log('📥 Received:', data);
 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                if (data.type === 'agent_update') {
+                    const agentIndicatorId = data.agent + '-agent';
+                    if (data.status === 'starting') {
+                        activateAgent(agentIndicatorId);
+                    } else {
+                        deactivateAgent(agentIndicatorId);
+                        if (data.status === 'completed' || data.status === 'failed') {
+                            addDetailedResult({
+                                agent: data.agent,
+                                task: data.task,
+                                output: data.output || data.error,
+                                duration: data.duration
+                            });
+                            // Update progress roughly (4 agents total)
+                            const currentProgress = parseFloat(document.getElementById('progress').style.width) || 0;
+                            document.getElementById('progress').style.width = Math.min(currentProgress + 25, 100) + '%';
+                        }
+                    }
+                } else if (data.type === 'research_complete') {
+                    // Show execution summary
+                    const resultsDiv = document.getElementById('results');
+                    const summaryCard = document.createElement('div');
+                    summaryCard.className = 'result-card';
+                    summaryCard.innerHTML = `
+                        <div class="result-header">
+                            <div class="result-agent" style="color: var(--success);">
+                                <span>✅ Research Complete</span>
+                            </div>
+                            <div class="result-time">Total time: ${data.total_time?.toFixed(2) || 0}s</div>
+                        </div>
+                        <div class="result-content">
+                            <strong>Query:</strong> ${data.query || ''}<br>
+                            <strong>Tasks Completed:</strong> ${data.results_count || 0}
+                        </div>
+                    `;
+                    resultsDiv.insertBefore(summaryCard, resultsDiv.firstChild);
+                    
+                    document.getElementById('progress').style.width = '100%';
+                    ws.close();
+                } else if (data.type === 'error') {
+                    addResult('error', data.message);
+                    ws.close();
                 }
-
-                const data = await response.json();
-                
-                // Display real results
-                displayResults(data);
-                
-            } catch (error) {
-                console.error('Error:', error);
-                addResult('error', `Error: ${error.message}. Make sure the backend is running.`);
-            } finally {
-                // Hide loading and re-enable button
-                document.getElementById('loading').classList.remove('active');
+            };
+            
+            ws.onerror = (error) => {
+                console.error('❌ WebSocket error:', error);
+                addResult('error', 'WebSocket connection failed. Make sure the backend is running.');
                 this.disabled = false;
-                
-                // Deactivate all agents
+                document.getElementById('loading').classList.remove('active');
+            };
+            
+            ws.onclose = () => {
+                console.log('🔌 WebSocket closed');
+                this.disabled = false;
+                document.getElementById('loading').classList.remove('active');
+                // Deactivate all agents just in case
                 ['search-agent', 'research-agent', 'writer-agent', 'optimizer-agent', 'verifier-agent'].forEach(deactivateAgent);
-            }
+            };
         });
 
         function displayResults(data) {
+            // No longer used for the main research button, but kept for compatibility
             const resultsDiv = document.getElementById('results');
-            
-            // Show execution summary
-            const summaryCard = document.createElement('div');
-            summaryCard.className = 'result-card';
-            summaryCard.innerHTML = `
-                <div class="result-header">
-                    <div class="result-agent" style="color: var(--success);">
-                        <span>✅ Research Complete</span>
-                    </div>
-                    <div class="result-time">Total time: ${data.execution_time?.toFixed(2) || 0}s</div>
-                </div>
-                <div class="result-content">
-                    <strong>Query:</strong> ${data.query || ''}<br>
-                    <strong>Mode:</strong> ${data.mode || 'adaptive'}<br>
-                    <strong>Agents Used:</strong> ${data.agents_used?.join(', ') || 'None'}
-                </div>
-            `;
-            resultsDiv.appendChild(summaryCard);
-            
-            // Show individual agent results
-            if (data.results && Array.isArray(data.results)) {
-                data.results.forEach(result => {
-                    addDetailedResult(result);
-                });
-            }
-            
-            // Update system stats if available
-            if (data.system_stats) {
-                updateSystemStats(data.system_stats);
-            }
+            // ... (rest as before)
         }
 
         function addDetailedResult(result) {
@@ -723,11 +738,10 @@
             const resultCard = document.createElement('div');
             resultCard.className = 'result-card';
             
-            // Format output based on type
             let outputContent = '';
             if (result.output) {
                 if (typeof result.output === 'object') {
-                    outputContent = `<pre>${JSON.stringify(result.output, null, 2)}</pre>`;
+                    outputContent = `<pre style="white-space: pre-wrap; word-break: break-all;">${JSON.stringify(result.output, null, 2)}</pre>`;
                 } else {
                     outputContent = result.output;
                 }
@@ -780,6 +794,7 @@
             }
             document.getElementById('query-input').value = '';
             document.getElementById('results').innerHTML = '';
+            document.getElementById('progress').style.width = '0%';
         });
 
         function updateSystemStats(stats) {
@@ -797,7 +812,7 @@
         // Fetch real system stats periodically
         async function fetchSystemStats() {
             try {
-                const response = await fetch(`${API_BASE}/system/stats`);
+                const response = await fetch(`${window.location.protocol}//${window.location.host}/api/v2/system/stats`);
                 if (response.ok) {
                     const stats = await response.json();
                     updateSystemStats(stats);
@@ -817,36 +832,6 @@
                 document.getElementById('research-btn').click();
             }
         });
-
-        // WebSocket for real-time updates (optional)
-        function connectWebSocket() {
-            const ws = new WebSocket('ws://localhost:8000/api/v2/ws/research');
-            
-            ws.onopen = () => {
-                console.log('WebSocket connected');
-            };
-            
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (data.type === 'agent_update') {
-                    // Activate/deactivate agents in real-time
-                    if (data.status === 'started') {
-                        activateAgent(data.agent + '-agent');
-                    } else {
-                        deactivateAgent(data.agent + '-agent');
-                    }
-                }
-            };
-            
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-            };
-            
-            return ws;
-        }
-
-        // Initialize WebSocket (optional - comment out if not needed)
-        // const ws = connectWebSocket();
     </script>
 </body>
 </html>

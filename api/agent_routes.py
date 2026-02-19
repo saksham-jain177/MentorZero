@@ -12,6 +12,7 @@ from agent.core.orchestrator import (
     AgentOrchestrator, 
     AgentTask, 
     ExecutionMode,
+    TaskResult,
     SearchAgent,
     WritingAgent,
     OptimizationAgent
@@ -222,53 +223,87 @@ async def research_websocket(websocket):
     WebSocket endpoint for real-time research updates
     """
     await websocket.accept()
+    print("WebSocket connection accepted")
     
     try:
         while True:
             # Receive query from client
             data = await websocket.receive_json()
             query = data.get("query", "")
+            mode = data.get("mode", "adaptive")
             
             if not query:
-                await websocket.send_json({"error": "No query provided"})
+                await websocket.send_json({"type": "error", "message": "No query provided"})
                 continue
             
-            # Stream results as agents complete tasks
+            # Map mode
+            mode_map = {
+                "adaptive": ExecutionMode.ADAPTIVE,
+                "parallel": ExecutionMode.PARALLEL,
+                "sequential": ExecutionMode.SEQUENTIAL
+            }
+            execution_mode = mode_map.get(mode, ExecutionMode.ADAPTIVE)
+            
+            # Define tasks
             tasks = [
                 AgentTask("optimizer", "optimize_query", query, priority=10),
                 AgentTask("search", "web_search", query, priority=8),
                 AgentTask("research", "research_topic", query, priority=7),
+                AgentTask("writer", "summarize", "Research findings", priority=5, requires=["web_search"])
             ]
             
-            for task in tasks:
-                # Execute single task
-                result = await orchestrator._execute_single_task(task)
-                
-                # Send update to client
+            # Callback for task start
+            async def on_start(task: AgentTask):
                 await websocket.send_json({
                     "type": "agent_update",
                     "agent": task.agent_name,
                     "task": task.task_type,
+                    "status": "starting"
+                })
+
+            # Callback for task completion
+            async def on_complete(result: TaskResult):
+                await websocket.send_json({
+                    "type": "agent_update",
+                    "agent": result.agent_name,
+                    "task": result.task_type,
                     "status": "completed" if result.success else "failed",
                     "output": result.output if result.success else None,
                     "error": result.error if not result.success else None,
                     "duration": result.duration
                 })
-                
-                # Small delay for visual effect
-                await asyncio.sleep(0.1)
+            
+            # Execute tasks with callbacks
+            import time
+            start_time = time.time()
+            
+            results = await orchestrator.execute_tasks(
+                tasks, 
+                mode=execution_mode,
+                on_task_start=on_start,
+                on_task_complete=on_complete
+            )
+            
+            total_time = time.time() - start_time
             
             # Send final summary
             await websocket.send_json({
                 "type": "research_complete",
                 "query": query,
-                "total_time": sum(r.duration for r in results)
+                "total_time": total_time,
+                "results_count": len(results)
             })
             
     except Exception as e:
-        await websocket.send_json({"error": str(e)})
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except:
+            pass
     finally:
-        await websocket.close()
+        try:
+            await websocket.close()
+        except:
+            pass
 
 @router.post("/code/generate")
 async def generate_code(request: Dict[str, Any]):

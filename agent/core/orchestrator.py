@@ -97,12 +97,14 @@ class AgentOrchestrator:
     def register_agent(self, name: str, agent_instance: Any):
         """Register a specialized agent"""
         self.agents[name] = agent_instance
-        print(f"✅ Registered agent: {name}")
+        print(f"[OK] Registered agent: {name}")
     
     async def execute_tasks(
         self, 
         tasks: List[AgentTask], 
-        mode: ExecutionMode = ExecutionMode.ADAPTIVE
+        mode: ExecutionMode = ExecutionMode.ADAPTIVE,
+        on_task_start: Optional[Callable[[AgentTask], Any]] = None,
+        on_task_complete: Optional[Callable[[TaskResult], Any]] = None
     ) -> List[TaskResult]:
         """
         Execute multiple tasks with specified mode
@@ -121,9 +123,9 @@ class AgentOrchestrator:
             print(f"📊 Adaptive mode selected: {mode.value}")
         
         if mode == ExecutionMode.PARALLEL:
-            return await self._execute_parallel(tasks)
+            return await self._execute_parallel(tasks, on_task_start, on_task_complete)
         else:
-            return await self._execute_sequential(tasks)
+            return await self._execute_sequential(tasks, on_task_start, on_task_complete)
     
     def _decide_execution_mode(self, tasks: List[AgentTask]) -> ExecutionMode:
         """Intelligently decide execution mode based on system state"""
@@ -144,7 +146,12 @@ class AgentOrchestrator:
         
         return ExecutionMode.PARALLEL
     
-    async def _execute_parallel(self, tasks: List[AgentTask]) -> List[TaskResult]:
+    async def _execute_parallel(
+        self, 
+        tasks: List[AgentTask],
+        on_task_start: Optional[Callable[[AgentTask], Any]] = None,
+        on_task_complete: Optional[Callable[[TaskResult], Any]] = None
+    ) -> List[TaskResult]:
         """Execute tasks in parallel with resource throttling"""
         results = []
         
@@ -160,38 +167,52 @@ class AgentOrchestrator:
                 await asyncio.sleep(1)
             
             # Execute batch in parallel
-            batch_tasks = [self._execute_single_task(task) for task in batch]
+            batch_tasks = [self._execute_single_task(task, on_task_start, on_task_complete) for task in batch]
             batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
             
             # Process results
             for task, result in zip(batch, batch_results):
                 if isinstance(result, Exception):
-                    results.append(TaskResult(
+                    res = TaskResult(
                         agent_name=task.agent_name,
                         task_type=task.task_type,
                         output=None,
                         duration=0,
                         success=False,
                         error=str(result)
-                    ))
+                    )
+                    results.append(res)
+                    if on_task_complete:
+                        if asyncio.iscoroutinefunction(on_task_complete):
+                            await on_task_complete(res)
+                        else:
+                            on_task_complete(res)
                 else:
                     results.append(result)
         
         return results
     
-    async def _execute_sequential(self, tasks: List[AgentTask]) -> List[TaskResult]:
+    async def _execute_sequential(
+        self, 
+        tasks: List[AgentTask],
+        on_task_start: Optional[Callable[[AgentTask], Any]] = None,
+        on_task_complete: Optional[Callable[[TaskResult], Any]] = None
+    ) -> List[TaskResult]:
         """Execute tasks one by one"""
         results = []
         
         for task in tasks:
             # Check dependencies
             if task.requires:
+                skip = False
                 for dep in task.requires:
                     if dep not in [r.task_type for r in results if r.success]:
                         print(f"⚠️ Skipping {task.task_type}: dependency {dep} not met")
-                        continue
+                        skip = True
+                        break
+                if skip: continue
             
-            result = await self._execute_single_task(task)
+            result = await self._execute_single_task(task, on_task_start, on_task_complete)
             results.append(result)
             
             # Small delay to prevent CPU spikes
@@ -199,9 +220,21 @@ class AgentOrchestrator:
         
         return results
     
-    async def _execute_single_task(self, task: AgentTask) -> TaskResult:
+    async def _execute_single_task(
+        self, 
+        task: AgentTask,
+        on_task_start: Optional[Callable[[AgentTask], Any]] = None,
+        on_task_complete: Optional[Callable[[TaskResult], Any]] = None
+    ) -> TaskResult:
         """Execute a single agent task with monitoring"""
         start_time = time.time()
+        
+        # Notify task start
+        if on_task_start:
+            if asyncio.iscoroutinefunction(on_task_start):
+                await on_task_start(task)
+            else:
+                on_task_start(task)
         
         try:
             # Update resource monitor
@@ -213,7 +246,7 @@ class AgentOrchestrator:
                 raise ValueError(f"Agent {task.agent_name} not registered")
             
             # Execute with timeout
-            print(f"🚀 Starting: {task.agent_name}.{task.task_type}")
+            print(f">>> Starting: {task.agent_name}.{task.task_type}")
             
             # Call the appropriate method on the agent
             method = getattr(agent, task.task_type, None)
@@ -227,9 +260,9 @@ class AgentOrchestrator:
             )
             
             duration = time.time() - start_time
-            print(f"✅ Completed: {task.agent_name}.{task.task_type} ({duration:.2f}s)")
+            print(f"[DONE] Completed: {task.agent_name}.{task.task_type} ({duration:.2f}s)")
             
-            return TaskResult(
+            res = TaskResult(
                 agent_name=task.agent_name,
                 task_type=task.task_type,
                 output=result,
@@ -237,8 +270,16 @@ class AgentOrchestrator:
                 success=True
             )
             
+            if on_task_complete:
+                if asyncio.iscoroutinefunction(on_task_complete):
+                    await on_task_complete(res)
+                else:
+                    on_task_complete(res)
+                    
+            return res
+            
         except asyncio.TimeoutError:
-            return TaskResult(
+            res = TaskResult(
                 agent_name=task.agent_name,
                 task_type=task.task_type,
                 output=None,
@@ -246,8 +287,14 @@ class AgentOrchestrator:
                 success=False,
                 error=f"Timeout after {task.max_duration}s"
             )
+            if on_task_complete:
+                if asyncio.iscoroutinefunction(on_task_complete):
+                    await on_task_complete(res)
+                else:
+                    on_task_complete(res)
+            return res
         except Exception as e:
-            return TaskResult(
+            res = TaskResult(
                 agent_name=task.agent_name,
                 task_type=task.task_type,
                 output=None,
@@ -255,6 +302,12 @@ class AgentOrchestrator:
                 success=False,
                 error=str(e)
             )
+            if on_task_complete:
+                if asyncio.iscoroutinefunction(on_task_complete):
+                    await on_task_complete(res)
+                else:
+                    on_task_complete(res)
+            return res
         finally:
             self.resource_monitor.active_agents -= 1
     

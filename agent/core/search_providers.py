@@ -217,18 +217,18 @@ class UnifiedSearchProvider:
         self.enabled_providers = []
         if self.providers["tavily"].enabled:
             self.enabled_providers.append("tavily")
-            print("✅ Tavily search enabled")
+            print("[OK] Tavily search enabled")
         if self.providers["serper"].enabled:
             self.enabled_providers.append("serper")
-            print("✅ Serper search enabled")
+            print("[OK] Serper search enabled")
         if self.providers["arxiv"].enabled:
             self.enabled_providers.append("arxiv")
-            print("✅ ArXiv search enabled")
+            print("[OK] ArXiv search enabled")
         
         # Always have DuckDuckGo as fallback
         if not self.enabled_providers:
             self.enabled_providers.append("duckduckgo")
-            print("⚠️ No API keys found, using DuckDuckGo fallback")
+            print("[!] No API keys found, using DuckDuckGo fallback")
     
     async def search(self, query: str, max_results: int = 5) -> Dict[str, Any]:
         """

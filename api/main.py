@@ -60,9 +60,9 @@ async def root():
 # Startup event
 @app.on_event("startup")
 async def startup_event():
-    logger.info("🚀 Starting MentorZero Multi-Agent System...")
+    logger.info("Starting MentorZero Multi-Agent System...")
     await initialize_agents()
-    logger.info("✅ All agents initialized and ready!")
+    logger.info("All agents initialized and ready!")
 
 # Shutdown event
 @app.on_event("shutdown")

@@ -1,9 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MentorZero - AI Research Assistant</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -23,6 +25,79 @@
             --success: #10b981;
             --warning: #f59e0b;
             --error: #ef4444;
+            --surface: rgba(30, 41, 59, 0.7);
+        }
+
+        #graph-container {
+            width: 100%;
+            height: 600px;
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-top: 2rem;
+            display: none;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #graph-container.active {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .graph-header {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .graph-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text);
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .graph-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 10;
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .graph-btn {
+            background: var(--surface);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text);
+            padding: 0.5rem 1rem;
+            border-radius: 10px;
+            cursor: pointer;
+            backdrop-filter: blur(5px);
+            transition: all 0.3s ease;
+            font-size: 0.85rem;
+        }
+
+        .graph-btn:hover {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         body {
@@ -65,9 +140,19 @@
         }
 
         @keyframes float {
-            0%, 100% { transform: translate(0, 0) scale(1); }
-            33% { transform: translate(30px, -50px) scale(1.1); }
-            66% { transform: translate(-20px, 20px) scale(0.9); }
+
+            0%,
+            100% {
+                transform: translate(0, 0) scale(1);
+            }
+
+            33% {
+                transform: translate(30px, -50px) scale(1.1);
+            }
+
+            66% {
+                transform: translate(-20px, 20px) scale(0.9);
+            }
         }
 
         /* Header */
@@ -152,7 +237,9 @@
         }
 
         @keyframes rotate {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .agent-indicator.active .agent-orb {
@@ -233,8 +320,15 @@
         }
 
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
         }
 
         /* Query Input Section */
@@ -359,6 +453,7 @@
                 opacity: 0;
                 transform: translateY(20px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -412,7 +507,9 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         /* System Stats */
@@ -481,9 +578,10 @@
         }
     </style>
 </head>
+
 <body>
     <div class="bg-animation"></div>
-    
+
     <header class="header">
         <h1>MentorZero</h1>
         <p class="subtitle">Multi-Agent AI Research Assistant</p>
@@ -521,11 +619,9 @@
         <!-- Query Section -->
         <div class="query-section">
             <div class="input-group">
-                <input type="text" 
-                       class="query-input" 
-                       id="query-input"
-                       placeholder="Ask anything... e.g., 'Research the latest advances in quantum computing'"
-                       autocomplete="off">
+                <input type="text" class="query-input" id="query-input"
+                    placeholder="Ask anything... e.g., 'Research the latest advances in quantum computing'"
+                    autocomplete="off">
             </div>
 
             <div class="mode-toggle">
@@ -558,6 +654,24 @@
                     <span>🗑️</span>
                     <span>Clear</span>
                 </button>
+                <button class="btn" id="toggle-graph-btn"
+                    style="background: linear-gradient(135deg, var(--accent), var(--primary));">
+                    <span>🕸️</span>
+                    <span>Knowledge Map</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Knowledge Graph Section -->
+        <div id="graph-container">
+            <div class="graph-header">
+                <div class="graph-title">Knowledge Intelligence Map</div>
+                <div id="graph-status" style="font-size: 0.85rem; color: var(--text-dim);"></div>
+            </div>
+            <div id="cy" style="width: 100%; height: 100%;"></div>
+            <div class="graph-controls">
+                <button class="graph-btn" id="refresh-graph">🔄 Refresh</button>
+                <button class="graph-btn" id="fit-graph">🔍 Center</button>
             </div>
         </div>
 
@@ -622,16 +736,16 @@
 
         // Mode selection
         document.querySelectorAll('.mode-option').forEach(option => {
-            option.addEventListener('click', function() {
+            option.addEventListener('click', function () {
                 document.querySelectorAll('.mode-option').forEach(o => o.classList.remove('selected'));
                 this.classList.add('selected');
-                document.getElementById('mode-stat').textContent = 
+                document.getElementById('mode-stat').textContent =
                     this.dataset.mode.charAt(0).toUpperCase() + this.dataset.mode.slice(1);
             });
         });
 
         // Main action button - NOW USES WEBSOCKETS
-        document.getElementById('research-btn').addEventListener('click', function() {
+        document.getElementById('research-btn').addEventListener('click', function () {
             const query = document.getElementById('query-input').value.trim();
             if (!query) {
                 alert('Please enter a query');
@@ -639,21 +753,21 @@
             }
 
             const mode = document.querySelector('.mode-option.selected').dataset.mode;
-            
+
             // Disable button during processing
             this.disabled = true;
-            
+
             // Show loading
             document.getElementById('loading').classList.add('active');
             document.getElementById('results').innerHTML = '';
-            
+
             // Reset progress bar
             document.getElementById('progress').style.width = '0%';
 
             // Use WebSocket for real-time updates
             const wsUrl = `ws://${window.location.host}/api/v2/ws/research`;
             const ws = new WebSocket(wsUrl);
-            
+
             ws.onopen = () => {
                 console.log('🚀 WebSocket connected, sending query...');
                 ws.send(JSON.stringify({
@@ -661,7 +775,7 @@
                     mode: mode
                 }));
             };
-            
+
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 console.log('📥 Received:', data);
@@ -702,7 +816,7 @@
                         </div>
                     `;
                     resultsDiv.insertBefore(summaryCard, resultsDiv.firstChild);
-                    
+
                     document.getElementById('progress').style.width = '100%';
                     ws.close();
                 } else if (data.type === 'error') {
@@ -710,14 +824,14 @@
                     ws.close();
                 }
             };
-            
+
             ws.onerror = (error) => {
                 console.error('❌ WebSocket error:', error);
                 addResult('error', 'WebSocket connection failed. Make sure the backend is running.');
                 this.disabled = false;
                 document.getElementById('loading').classList.remove('active');
             };
-            
+
             ws.onclose = () => {
                 console.log('🔌 WebSocket closed');
                 this.disabled = false;
@@ -737,7 +851,7 @@
             const resultsDiv = document.getElementById('results');
             const resultCard = document.createElement('div');
             resultCard.className = 'result-card';
-            
+
             let outputContent = '';
             if (result.output) {
                 if (typeof result.output === 'object') {
@@ -746,7 +860,7 @@
                     outputContent = result.output;
                 }
             }
-            
+
             resultCard.innerHTML = `
                 <div class="result-header">
                     <div class="result-agent">
@@ -763,7 +877,7 @@
             const resultsDiv = document.getElementById('results');
             const resultCard = document.createElement('div');
             resultCard.className = 'result-card';
-            
+
             const agentNames = {
                 'search-agent': 'Search Agent',
                 'research-agent': 'Research Agent',
@@ -786,7 +900,7 @@
         }
 
         // Clear button with confirmation
-        document.getElementById('clear-btn').addEventListener('click', function() {
+        document.getElementById('clear-btn').addEventListener('click', function () {
             if (document.getElementById('results').innerHTML.trim() !== '') {
                 if (!confirm('Are you sure you want to clear all results?')) {
                     return;
@@ -826,12 +940,139 @@
         setInterval(fetchSystemStats, 5000);
         fetchSystemStats(); // Initial fetch
 
-        // Enter key support
-        document.getElementById('query-input').addEventListener('keypress', function(e) {
+        // Graph Visualization Logic
+        let cy = null;
+
+        function initGraph(data) {
+            const container = document.getElementById('cy');
+            const elements = [];
+
+            // Transform data for Cytoscape
+            data.nodes.forEach(node => {
+                elements.push({
+                    data: {
+                        id: node.id,
+                        label: node.name,
+                        type: node.type
+                    }
+                });
+            });
+
+            data.edges.forEach(edge => {
+                elements.push({
+                    data: {
+                        id: edge.id,
+                        source: edge.source,
+                        target: edge.target,
+                        label: edge.relation
+                    }
+                });
+            });
+
+            cy = cytoscape({
+                container: container,
+                elements: elements,
+                style: [
+                    {
+                        selector: 'node',
+                        style: {
+                            'label': 'data(label)',
+                            'color': '#fff',
+                            'text-valign': 'center',
+                            'text-halign': 'center',
+                            'background-color': '#6366f1',
+                            'width': '60px',
+                            'height': '60px',
+                            'font-size': '10px',
+                            'text-wrap': 'wrap',
+                            'text-max-width': '50px'
+                        }
+                    },
+                    {
+                        selector: 'node[type="topic"]',
+                        style: {
+                            'background-color': '#06b6d4',
+                            'width': '80px',
+                            'height': '80px',
+                            'font-size': '12px',
+                            'font-weight': 'bold'
+                        }
+                    },
+                    {
+                        selector: 'edge',
+                        style: {
+                            'width': 2,
+                            'line-color': 'rgba(255, 255, 255, 0.2)',
+                            'target-arrow-color': 'rgba(255, 255, 255, 0.2)',
+                            'target-arrow-shape': 'triangle',
+                            'curve-style': 'bezier',
+                            'label': 'data(label)',
+                            'font-size': '8px',
+                            'color': 'rgba(226, 232, 240, 0.5)',
+                            'text-rotation': 'autorotate',
+                            'text-margin-y': -10
+                        }
+                    }
+                ],
+                layout: {
+                    name: 'cose',
+                    animate: true,
+                    nodeOverlap: 20,
+                    refresh: 20,
+                    fit: true,
+                    padding: 30,
+                    randomize: false,
+                    componentSpacing: 100,
+                    nodeRepulsion: 4000,
+                    edgeElasticity: 100,
+                    nestingFactor: 5,
+                    gravity: 80,
+                    numIter: 1000,
+                    initialTemp: 200,
+                    coolingFactor: 0.95,
+                    minTemp: 1.0
+                }
+            });
+
+            document.getElementById('graph-status').textContent = `${data.nodes.length} entities discovered`;
+        }
+
+        async function loadGraph() {
+            try {
+                const response = await fetch(`${API_BASE}/graph`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.nodes.length > 0) {
+                        initGraph(data);
+                    } else {
+                        document.getElementById('graph-status').textContent = 'Research something to populate the map!';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load graph:', error);
+            }
+        }
+
+        document.getElementById('toggle-graph-btn').addEventListener('click', function () {
+            const container = document.getElementById('graph-container');
+            container.classList.toggle('active');
+            if (container.classList.contains('active')) {
+                loadGraph();
+            }
+        });
+
+        document.getElementById('refresh-graph').addEventListener('click', loadGraph);
+        document.getElementById('fit-graph').addEventListener('click', () => {
+            if (cy) cy.fit();
+        });
+
+        // Update enter key support
+        document.getElementById('query-input').addEventListener('keypress', function (e) {
             if (e.key === 'Enter' && !document.getElementById('research-btn').disabled) {
                 document.getElementById('research-btn').click();
             }
         });
     </script>
 </body>
+
 </html>

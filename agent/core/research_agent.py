@@ -4,11 +4,15 @@ Actively researches topics instead of just storing static text
 """
 from typing import Dict, List, Optional, Any
 import asyncio
-import httpx
+import httpx  # type: ignore[import-untyped]
 from dataclasses import dataclass
 from datetime import datetime
 import json
 import hashlib
+import logging
+from agent.db.graph_store import GraphStore  # type: ignore[import-untyped]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -27,7 +31,7 @@ class WebSearchTool:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key
         # Import the real search provider
-        from agent.core.search_providers import perform_web_search
+        from agent.core.search_providers import perform_web_search  # type: ignore[import-untyped]
         self.perform_search = perform_web_search
     
     async def search(self, query: str, max_results: int = 5) -> List[Dict]:
@@ -129,22 +133,43 @@ class KnowledgeGraphBuilder:
             "key_facts": []
         }
         
-        for fact_data in facts[:10]:  # Top 10 facts
+        # Add central topic as primary node
+        topic_id = self._hash_id(query)
+        graph["entities"].append({"id": topic_id, "name": query, "type": "topic"})
+        
+        for fact_data in facts[:15]:
             fact = fact_data["fact"]
             graph["key_facts"].append({
                 "text": fact,
                 "confidence": fact_data["confidence"]
             })
             
-            # Extract entities (simplified - use NER in production)
-            # This would use spaCy or similar for entity extraction
+            # Simple Entity Extraction
             words = fact.split()
+            extracted_entities = []
             for word in words:
-                if word[0].isupper() and len(word) > 2:
-                    if word not in graph["entities"]:
-                        graph["entities"].append(word)
+                clean_word = word.strip(".,;:\"'()").capitalize()
+                if len(clean_word) > 2 and clean_word[0].isupper() and clean_word.lower() not in ["the", "this", "that", "with", "from", "they"]:
+                    entity_id = self._hash_id(clean_word)
+                    if not any(e["id"] == entity_id for e in graph["entities"]):
+                        graph["entities"].append({"id": entity_id, "name": clean_word, "type": "entity"})
+                    extracted_entities.append(entity_id)
+            
+            # Create relationships
+            for eid in extracted_entities:
+                if eid != topic_id:
+                    graph["relationships"].append({
+                        "source": topic_id,
+                        "target": eid,
+                        "relation": "relates_to",
+                        "metadata": {"fact": fact}
+                    })
         
         return graph
+
+    def _hash_id(self, text: str) -> str:
+        import hashlib
+        return hashlib.md5(text.lower().encode()).hexdigest()
 
 
 class ResearchAgent:
@@ -153,10 +178,11 @@ class ResearchAgent:
     instead of just retrieving from static database
     """
     
-    def __init__(self, llm_client=None):
+    def __init__(self, llm_client=None, db_path: str = "./data/mentorzero.db"):
         self.web_search = WebSearchTool()
         self.fact_verifier = FactVerifier()
         self.graph_builder = KnowledgeGraphBuilder()
+        self.graph_store = GraphStore(db_path)
         self.llm = llm_client
         self.research_cache = {}
     
@@ -201,6 +227,9 @@ class ResearchAgent:
         # Calculate overall confidence
         avg_confidence = sum(f["confidence"] for f in verified_facts) / len(verified_facts) if verified_facts else 0
         
+        # Persist to Graph Store
+        self._persist_knowledge(knowledge_graph)
+        
         result = ResearchResult(
             query=query,
             sources=all_sources,
@@ -214,6 +243,29 @@ class ResearchAgent:
         self.research_cache[cache_key] = result
         
         return result
+
+    def _persist_knowledge(self, graph: Dict):
+        """Save extracted entities and relationships to the persistent store"""
+        try:
+            # Add nodes
+            for entity in graph["entities"]:
+                self.graph_store.add_node(
+                    name=entity["name"],
+                    node_type=entity["type"],
+                    metadata=entity.get("metadata", {})
+                )
+            
+            # Add edges
+            for rel in graph["relationships"]:
+                self.graph_store.add_edge(
+                    source_id=rel["source"],
+                    target_id=rel["target"],
+                    relation=rel["relation"],
+                    metadata=rel.get("metadata", {})
+                )
+            logger.info(f"Persisted {len(graph['entities'])} nodes and {len(graph['relationships'])} edges")
+        except Exception as e:
+            logger.error(f"Failed to persist knowledge: {e}")
     
     async def _expand_query(self, query: str) -> List[str]:
         """Use LLM to generate related search queries"""

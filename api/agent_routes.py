@@ -187,6 +187,24 @@ async def get_system_stats():
     """
     return orchestrator.resource_monitor.get_system_stats()
 
+@router.get("/graph", response_model=Dict[str, Any])
+async def get_graph():
+    """Get the full knowledge graph from the research agent"""
+    research_agent = orchestrator.agents.get("research")
+    if not research_agent:
+        return {"nodes": [], "edges": []}
+    
+    return research_agent.graph_store.get_full_graph()
+
+@router.get("/graph/search", response_model=Dict[str, Any])
+async def search_graph(query: str):
+    """Search for a specific entity and its relationships in the graph"""
+    research_agent = orchestrator.agents.get("research")
+    if not research_agent:
+        return {"nodes": [], "edges": []}
+    
+    return research_agent.graph_store.search_subgraph(query)
+
 @router.post("/execute/custom")
 async def execute_custom_workflow(tasks: List[Dict[str, Any]]):
     """

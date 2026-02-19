@@ -54,7 +54,9 @@ class WebSearchTool:
                     "score": result.get("score", 0.5),
                     "source": result.get("source", "unknown")
                 })
-            
+            if not formatted_results:
+                raise ValueError("No results found in search response")
+                
             return formatted_results
             
         except Exception as e:
@@ -62,11 +64,19 @@ class WebSearchTool:
             # Fallback to mock if search fails
             return [
                 {
-                    "title": f"Result for {query}",
-                    "url": "https://example.com",
+                    "title": f"Result 1 for {query}",
+                    "url": "https://example.com/1",
                     "snippet": f"Information about {query}",
-                    "content": f"Detailed content about {query}",
+                    "content": "Quantum Computing uses Qubits to store information. Entanglement is a key feature. Superposition is essential.",
                     "score": 0.95,
+                    "source": "mock"
+                },
+                {
+                    "title": f"Result 2 for {query}",
+                    "url": "https://example.com/2",
+                    "snippet": f"More on {query}",
+                    "content": "Quantum Computing uses Qubits to store information. Entanglement is a key feature. Superposition is essential.",
+                    "score": 0.90,
                     "source": "mock"
                 }
             ]
@@ -95,6 +105,7 @@ class FactVerifier:
             sentences = content.split(". ")
             
             for sentence in sentences:
+                sentence = sentence.strip(".")
                 if len(sentence) > 20:  # Basic filter
                     fact_hash = hashlib.md5(sentence.lower().encode()).hexdigest()
                     fact_counts[fact_hash] = fact_counts.get(fact_hash, 0) + 1
@@ -104,7 +115,7 @@ class FactVerifier:
                             "text": sentence,
                             "sources": []
                         }
-                    fact_sources[fact_hash]["sources"].append(source["url"])
+                    fact_sources[fact_hash]["sources"].append(source.get("url", ""))
         
         # Return facts with confidence scores
         verified_facts = []
@@ -115,6 +126,8 @@ class FactVerifier:
                     "confidence": min(fact_counts[fact_hash] / len(sources), 1.0),
                     "sources": data["sources"]
                 })
+        
+        logger.info(f"Verified {len(verified_facts)} facts from {len(sources)} sources")
         
         return sorted(verified_facts, key=lambda x: x["confidence"], reverse=True)
 
@@ -220,9 +233,12 @@ class ResearchAgent:
         
         # Verify and cross-reference facts
         verified_facts = self.fact_verifier.cross_reference(all_sources)
+        logger.info(f"Verified facts: {[f['fact'] for f in verified_facts]}")
         
         # Build knowledge graph
         knowledge_graph = self.graph_builder.build(verified_facts, query)
+        logger.info(f"Entities in graph: {[e['name'] for e in knowledge_graph['entities']]}")
+        logger.info(f"Relationships in graph: {len(knowledge_graph['relationships'])}")
         
         # Calculate overall confidence
         avg_confidence = sum(f["confidence"] for f in verified_facts) / len(verified_facts) if verified_facts else 0

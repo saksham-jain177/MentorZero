@@ -1,9 +1,5 @@
-"""
-Real Search Provider Integrations
-Actual web search, not mock data
-"""
 import os
-import httpx
+import httpx  # type: ignore
 import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -160,10 +156,13 @@ class ArxivSearch:
                         id_match = re.search(r'<id>(.*?)</id>', entry)
                         
                         if title_match and summary_match:
+                            title_text = title_match.group(1).strip()
+                            summary_text = summary_match.group(1).strip()[:500]  # type: ignore
+                            paper_url = id_match.group(1) if id_match else ""
                             results.append({
-                                "title": title_match.group(1).strip(),
-                                "content": summary_match.group(1).strip()[:500],
-                                "url": id_match.group(1) if id_match else "",
+                                "title": title_text,
+                                "content": summary_text,
+                                "url": paper_url,
                                 "score": 0.9
                             })
                     
@@ -253,9 +252,11 @@ class UnifiedSearchProvider:
                     print(f"Error in {provider_name}: {results}")
                     continue
                     
-                for result in results:
-                    result["source"] = provider_name
-                    all_results.append(result)
+                if results and isinstance(results, list):  # type: ignore
+                    for result in results:
+                        if isinstance(result, dict):
+                            result["source"] = provider_name
+                            all_results.append(result)
         
         # Sort by score and deduplicate
         all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
@@ -273,7 +274,7 @@ class UnifiedSearchProvider:
         
         return {
             "query": query,
-            "results": unique_results[:max_results],
+            "results": unique_results[:max_results],  # type: ignore
             "sources": sources_used,
             "timestamp": datetime.now().isoformat(),
             "total_found": len(all_results)

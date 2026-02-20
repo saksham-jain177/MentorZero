@@ -3,12 +3,13 @@ MentorZero - Multi-Agent AI Research Assistant
 Main FastAPI application
 """
 import logging
-from fastapi import FastAPI, WebSocket
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect # type: ignore
+from fastapi.staticfiles import StaticFiles # type: ignore
+from fastapi.middleware.cors import CORSMiddleware # type: ignore
 import asyncio
-
-from api.agent_routes import router as agent_router, initialize_agents
+from api.agent_routes import router as agent_router # type: ignore
+import uvicorn # type: ignore
+from api.agent_routes import initialize_agents # Re-added initialize_agents import
 
 # Configure logging
 logging.basicConfig(

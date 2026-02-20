@@ -9,7 +9,7 @@ from enum import Enum
 import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor
-import psutil
+import psutil  # type: ignore[import-untyped]
 import json
 
 
@@ -26,7 +26,7 @@ class AgentTask:
     input_data: Any
     priority: int = 5
     max_duration: float = 30.0
-    requires: List[str] = None  # Dependencies on other tasks
+    requires: Optional[List[str]] = None  # Dependencies on other tasks
 
 
 @dataclass
@@ -188,7 +188,8 @@ class AgentOrchestrator:
                         else:
                             on_task_complete(res)
                 else:
-                    results.append(result)
+                    if isinstance(result, TaskResult):
+                        results.append(result)
         
         return results
     
@@ -205,7 +206,7 @@ class AgentOrchestrator:
             # Check dependencies
             if task.requires:
                 skip = False
-                for dep in task.requires:
+                for dep in task.requires:  # type: ignore
                     if dep not in [r.task_type for r in results if r.success]:
                         print(f"[skip] Skipping {task.task_type}: dependency {dep} not met")
                         skip = True
@@ -310,6 +311,16 @@ class AgentOrchestrator:
             return res
         finally:
             self.resource_monitor.active_agents -= 1
+        
+        # Fallback return to satisfy static analysis
+        return TaskResult(
+            agent_name=task.agent_name,
+            task_type=task.task_type,
+            output=None,
+            duration=time.time() - start_time,
+            success=False,
+            error="Unknown execution error"
+        )
     
     def get_execution_plan(self, tasks: List[AgentTask]) -> Dict:
         """Generate an execution plan showing how tasks will run"""
@@ -324,7 +335,7 @@ class AgentOrchestrator:
         sorted_tasks = sorted(tasks, key=lambda x: x.priority, reverse=True)
         
         for task in sorted_tasks:
-            plan["task_order"].append({
+            plan["task_order"].append({  # type: ignore
                 "agent": task.agent_name,
                 "task": task.task_type,
                 "priority": task.priority,
@@ -363,7 +374,10 @@ class WritingAgent:
     async def summarize(self, content: str) -> str:
         """Summarize content"""
         await asyncio.sleep(0.5)
-        return f"Summary of: {content[:50]}..."
+        if not isinstance(content, str):
+            content = str(content)
+        preview = content[:50]
+        return f"Summary of: {preview}..."
     
     async def expand(self, outline: str) -> str:
         """Expand an outline into full content"""

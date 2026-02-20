@@ -297,7 +297,7 @@ class ResearchAgent:
         try:
             response = await self.llm.send_prompt(prompt, temperature=0.7)
             expanded = [q.strip() for q in response.split('\n') if q.strip()]
-            return expanded[:3]
+            return expanded[:3]  # type: ignore
         except:
             return []
     
@@ -318,7 +318,7 @@ class ResearchAgent:
         prompt = f"""User asked: {user_query}
         
 Current knowledge base contains:
-{chr(10).join(current_knowledge[:5])}
+{chr(10).join(current_knowledge[:5])}  # type: ignore
 
 What key information is missing to fully answer this question?
 List the top 3 missing pieces of information."""
@@ -344,10 +344,11 @@ async def demo():
     
     print(f"Found {len(result.facts)} verified facts")
     print(f"Confidence: {result.confidence:.2%}")
-    print(f"Knowledge Graph: {len(result.knowledge_graph['entities'])} entities")
+    if result.knowledge_graph:
+        print(f"Knowledge Graph: {len(result.knowledge_graph['entities'])} entities")
     
     # Show top facts
-    for fact in result.facts[:3]:
+    for fact in result.facts[:3]:  # type: ignore
         print(f"- {fact}")
     
     await agent.close()

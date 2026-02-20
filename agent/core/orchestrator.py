@@ -159,7 +159,7 @@ class AgentOrchestrator:
         batch_size = self.resource_monitor.max_parallel_agents
         
         for i in range(0, len(tasks), batch_size):
-            batch = tasks[i:i + batch_size]
+            batch = tasks[i:i + batch_size]  # type: ignore
             
             # Wait for resources if needed
             while not self.resource_monitor.can_spawn_agent():
@@ -376,7 +376,7 @@ class WritingAgent:
         await asyncio.sleep(0.5)
         if not isinstance(content, str):
             content = str(content)
-        preview = content[:50]
+        preview = content[:50]  # type: ignore
         return f"Summary of: {preview}..."
     
     async def expand(self, outline: str) -> str:

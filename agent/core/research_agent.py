@@ -345,7 +345,7 @@ async def demo():
     print(f"Found {len(result.facts)} verified facts")
     print(f"Confidence: {result.confidence:.2%}")
     if result.knowledge_graph:
-        print(f"Knowledge Graph: {len(result.knowledge_graph['entities'])} entities")
+        print(f"Knowledge Graph: {len(result.knowledge_graph['entities'])} entities")  # type: ignore
     
     # Show top facts
     for fact in result.facts[:3]:  # type: ignore

@@ -126,7 +126,7 @@ class ArxivSearch:
     """ArXiv API for academic papers (no key needed)"""
     
     def __init__(self):
-        self.base_url = "http://export.arxiv.org/api/query"
+        self.base_url = "https://export.arxiv.org/api/query"
         self.enabled = os.getenv("MZ_ARXIV_ENABLED", "true").lower() == "true"
     
     async def search(self, query: str, max_results: int = 5) -> List[Dict]:
@@ -154,13 +154,13 @@ class ArxivSearch:
                     entries = re.findall(r'<entry>(.*?)</entry>', text, re.DOTALL)
                     
                     for entry in entries:
-                        title_match = re.search(r'<title>(.*?)</title>', entry)
+                        title_match = re.search(r'<title>(.*?)</title>', entry, re.DOTALL)
                         summary_match = re.search(r'<summary>(.*?)</summary>', entry, re.DOTALL)
                         id_match = re.search(r'<id>(.*?)</id>', entry)
                         
                         if title_match and summary_match:
-                            title_text = title_match.group(1).strip()
-                            summary_text = summary_match.group(1).strip()[:500]  # type: ignore
+                            title_text = re.sub(r'\s+', ' ', title_match.group(1).strip())
+                            summary_text = re.sub(r'\s+', ' ', summary_match.group(1).strip())[:500] # type: ignore
                             paper_url = id_match.group(1) if id_match else ""
                             results.append({
                                 "title": title_text,
@@ -189,9 +189,20 @@ class DuckDuckGoSearch:
         For production, use duckduckgo-search library
         """
         try:
-            # Note: For real results without API keys, we recommend installing 'duckduckgo-search'
-            # Here we return an empty list instead of mock logic to ensure 'No Mock' policy
-            return []
+            # Attempt to use duckduckgo-search library if installed
+            try:
+                from duckduckgo_search import DDGS # type: ignore
+                with DDGS() as ddgs:
+                    results = [r for r in ddgs.text(query, max_results=max_results)]
+                    return [{
+                        "title": r.get("title", ""),
+                        "content": r.get("body", ""),
+                        "url": r.get("href", ""),
+                        "score": 0.7
+                    } for r in results]
+            except ImportError:
+                logger.warning(f"DuckDuckGo search requested but 'duckduckgo-search' package not found. Install it for results without API keys.")
+                return []
             
         except Exception as e:
             logger.error(f"DuckDuckGo search error: {e}")

@@ -535,12 +535,74 @@
             position: fixed;
             bottom: 2rem;
             right: 2rem;
-            background: rgba(30, 41, 59, 0.9);
+            background: rgba(30, 41, 59, 0.95);
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 12px;
-            padding: 1rem;
-            min-width: 200px;
+            padding: 1.25rem;
+            min-width: 240px;
+            z-index: 1000;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .system-stats.collapsed {
+            min-width: 50px;
+            width: 50px;
+            height: 50px;
+            padding: 0;
+            border-radius: 50%;
+            cursor: pointer;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .system-stats.collapsed:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+        }
+
+        .stats-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 0.5rem;
+        }
+
+        .stats-toggle {
+            cursor: pointer;
+            color: var(--text-dim);
+            transition: color 0.3s ease;
+            display: flex;
+            align-items: center;
+        }
+
+        .stats-toggle:hover {
+            color: var(--text);
+        }
+
+        .stats-content {
+            transition: opacity 0.3s ease;
+        }
+
+        .system-stats.collapsed .stats-content,
+        .system-stats.collapsed .stats-header {
+            display: none;
+        }
+
+        .floating-icon {
+            display: none;
+        }
+
+        .system-stats.collapsed .floating-icon {
+            display: block;
+            color: white;
         }
 
         .stat-item {
@@ -721,25 +783,37 @@
     </div>
 
     <!-- System Stats -->
-    <div class="system-stats">
-        <h4 style="margin-bottom: 1rem; font-size: 0.9rem; text-transform: uppercase; color: var(--text-dim);">
-            System Status
-        </h4>
-        <div class="stat-item">
-            <span class="stat-label">CPU</span>
-            <span class="stat-value" id="cpu-stat">12%</span>
+    <div class="system-stats collapsed" id="system-stats">
+        <div class="floating-icon">
+            <i data-lucide="activity"></i>
         </div>
-        <div class="stat-item">
-            <span class="stat-label">Memory</span>
-            <span class="stat-value" id="memory-stat">45%</span>
+
+        <div class="stats-header">
+            <h4 style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-dim); margin: 0;">
+                System Status
+            </h4>
+            <div class="stats-toggle" id="close-stats">
+                <i data-lucide="chevron-down"></i>
+            </div>
         </div>
-        <div class="stat-item">
-            <span class="stat-label">Active Agents</span>
-            <span class="stat-value" id="agents-stat">0/4</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-label">Mode</span>
-            <span class="stat-value" id="mode-stat">Adaptive</span>
+
+        <div class="stats-content">
+            <div class="stat-item">
+                <span class="stat-label">CPU</span>
+                <span class="stat-value" id="cpu-stat">--%</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Memory</span>
+                <span class="stat-value" id="memory-stat">--%</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Active Agents</span>
+                <span class="stat-value" id="agents-stat">0/4</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Mode</span>
+                <span class="stat-value" id="mode-stat">Adaptive</span>
+            </div>
         </div>
     </div>
 
@@ -1109,6 +1183,21 @@
             if (e.key === 'Enter' && !document.getElementById('research-btn').disabled) {
                 document.getElementById('research-btn').click();
             }
+        });
+
+        // System stats toggle
+        const systemStats = document.getElementById('system-stats');
+        const closeStats = document.getElementById('close-stats');
+
+        systemStats.addEventListener('click', function (e) {
+            if (this.classList.contains('collapsed')) {
+                this.classList.remove('collapsed');
+            }
+        });
+
+        closeStats.addEventListener('click', function (e) {
+            e.stopPropagation();
+            systemStats.classList.add('collapsed');
         });
 
         // Initialize Lucide icons

@@ -1,8 +1,8 @@
-# MentorZero 🚀 Multi-Agent AI Research Assistant
+# MentorZero Multi-Agent AI Research Assistant
 
 > Transform how you research, learn, and discover knowledge through intelligent agent orchestration.
 
-## What Makes This Different 🎯
+## What Makes This Different
 
 MentorZero isn't just another RAG chatbot. It's a **multi-agent research system** where specialized AI agents collaborate to deliver comprehensive, verified, and actionable insights.
 
@@ -14,13 +14,13 @@ MentorZero isn't just another RAG chatbot. It's a **multi-agent research system*
 
 ### Our Solution
 **Autonomous agents** working in parallel or sequence, each mastering their domain:
-- 🔍 **Search Agent**: Live web intelligence gathering
-- 📚 **Research Agent**: Deep-dive analysis with cross-referencing
-- ✍️ **Writing Agent**: Content synthesis and summarization
-- ⚡ **Optimization Agent**: Query enhancement and result refinement
-- ✅ **Verification Agent**: Fact-checking and validation
+- **Search Agent**: Live web intelligence gathering
+- **Research Agent**: Deep-dive analysis with cross-referencing
+- **Writing Agent**: Content synthesis and summarization
+- **Optimization Agent**: Query enhancement and result refinement
+- **Verification Agent**: Fact-checking and validation
 
-## Architecture That Scales 🏗️
+## Architecture That Scales
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -42,7 +42,7 @@ MentorZero isn't just another RAG chatbot. It's a **multi-agent research system*
 └─────────────────────────────────────────────┘
 ```
 
-## Key Features 🌟
+## Key Features
 
 ### 1. **Intelligent Resource Management**
 The orchestrator monitors your system resources and adapts:
@@ -62,7 +62,7 @@ The orchestrator monitors your system resources and adapts:
 - Your data stays private and secure
 - Optimized for consumer GPUs
 
-## Quick Start 🚀
+## Quick Start
 
 ### Prerequisites
 - Python 3.12+ (3.13 compatible)
@@ -142,7 +142,7 @@ Open your browser to `http://localhost:8000/ui/modern.html`
   - Environment variable: `MZ_OPENAI_API_KEY`
   - Can use local alternatives like LocalAI
 
-## Usage Examples 💡
+## Usage Examples
 
 ### Basic Research Query
 ```python
@@ -165,17 +165,7 @@ POST /api/v2/execute/custom
 ]
 ```
 
-## Performance Metrics 📊
-
-| Metric | Traditional RAG | MentorZero |
-|--------|----------------|------------|
-| Retrieval Accuracy | 65% | 92% |
-| Response Time | 3-5s | 2-8s (adaptive) |
-| Fact Accuracy | ~70% | 95%+ (verified) |
-| Resource Usage | High | Optimized |
-| Cost per Query | $0.02-0.10 | $0 (local) |
-
-## Architecture Deep Dive 🔬
+## Architecture Deep Dive
 
 ### Agent Specialization
 Each agent is optimized for specific tasks:
@@ -207,27 +197,11 @@ The orchestrator makes intelligent decisions:
 - Handles agent failures gracefully
 - Optimizes for latency vs thoroughness
 
-## Contributing 🤝
+## Contributing
 
-We welcome contributions! Areas of interest:
-- New specialized agents
-- Additional search integrations
-- Performance optimizations
-- UI/UX improvements
+We welcome contributions!
 
-## Roadmap 🗺️
-
-- [ ] Graph-based knowledge persistence
-- [ ] Multi-modal agents (images, PDFs)
-- [ ] Collaborative agent negotiations
-- [ ] Self-improving through usage patterns
-- [ ] WebSocket streaming for real-time updates
-
-## Why "MentorZero"? 
-
-Like *AlphaZero* revolutionized game-playing through self-improvement, MentorZero aims to revolutionize research and learning through autonomous agent collaboration. Starting from zero external dependencies, it builds comprehensive understanding through intelligent orchestration.
-
-## License 📄
+## License
 
 MIT License - Build freely, extend boldly.
 

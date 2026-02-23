@@ -3,7 +3,7 @@ HyDE (Hypothetical Document Embeddings) Enhanced Retriever
 Generates hypothetical answers to improve retrieval quality
 """
 from typing import List, Dict, Optional, Tuple
-import numpy as np
+import numpy as np # type: ignore
 from dataclasses import dataclass
 import asyncio
 import logging
@@ -122,7 +122,7 @@ Write only the rewritten queries, one per line."""
         
         try:
             variations = await self.llm.send_prompt(multi_prompt, temperature=0.5)
-            queries = [q.strip() for q in variations.split('\n') if q.strip()][:3]
+            queries = [q.strip() for q in variations.split('\n') if q.strip()][:3] # type: ignore
             
             all_results = []
             for q in queries:
@@ -173,7 +173,7 @@ Write only the rewritten queries, one per line."""
         
         for result in results:
             # Simple dedup - in production use fuzzy matching
-            text_key = result.text[:100].lower()
+            text_key = result.text[:100].lower() # type: ignore
             if text_key not in seen_texts:
                 seen_texts.add(text_key)
                 unique_results.append(result)
@@ -192,7 +192,7 @@ Write only the rewritten queries, one per line."""
         
         # Sort by score and return top k
         unique_results.sort(key=lambda x: x.score, reverse=True)
-        return unique_results[:k]
+        return unique_results[:k] # type: ignore
 
 
 class CrossEncoderReranker:
@@ -208,7 +208,7 @@ class CrossEncoderReranker:
     def load_model(self):
         """Load cross-encoder model (requires sentence-transformers)"""
         try:
-            from sentence_transformers import CrossEncoder
+            from sentence_transformers import CrossEncoder # type: ignore
             self.model = CrossEncoder(self.model_name)
         except ImportError:
             logger.warning("CrossEncoder requires sentence-transformers. Reranking will use original order.")
@@ -230,13 +230,13 @@ class CrossEncoderReranker:
         
         # Score all query-document pairs
         pairs = [[query, doc] for doc in documents]
-        scores = self.model.predict(pairs)
+        scores = self.model.predict(pairs) # type: ignore
         
         # Sort by score
         scored_docs = [(i, score) for i, score in enumerate(scores)]
         scored_docs.sort(key=lambda x: x[1], reverse=True)
         
-        return scored_docs[:top_k]
+        return scored_docs[:top_k] # type: ignore
 
 
 # Demo showing the difference HyDE makes

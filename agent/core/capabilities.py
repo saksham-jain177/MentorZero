@@ -46,7 +46,7 @@ Return only the code."""
     
     async def analyze_code(self, code: str) -> Dict:
         """Analyze code for issues, improvements"""
-        analysis = {
+        analysis: Dict[str, Any] = {
             "complexity": self._calculate_complexity(code),
             "issues": [],
             "improvements": [],
@@ -162,9 +162,9 @@ class AnalysisAgent:
     def __init__(self):
         self.analysis_types = ["sentiment", "summary", "key_points", "comparison"]
     
-    async def analyze_text(self, text: str, analysis_type: str = "summary") -> Dict:
+    async def analyze_text(self, text: str, analysis_type: str = "summary") -> Dict[str, Any]:
         """Analyze text for various insights"""
-        result = {
+        result: Dict[str, Any] = {
             "type": analysis_type,
             "text_length": len(text),
             "word_count": len(text.split())
@@ -210,7 +210,7 @@ class AnalysisAgent:
         
         return {
             "sentiment": sentiment,
-            "confidence": round(confidence, 2),
+            "confidence": round(confidence, 2), # type: ignore
             "positive_signals": positive_count,
             "negative_signals": negative_count
         }
@@ -229,7 +229,7 @@ class AnalysisAgent:
         
         # If no indicators found, return first 3 sentences
         if not key_points and sentences:
-            key_points = sentences[:3]
+            key_points = sentences[:3] # type: ignore
         
         return key_points
 
@@ -252,7 +252,7 @@ class AutomationAgent:
         self.workflows[name] = workflow
         return workflow
     
-    async def execute_workflow(self, name: str, context: Dict = None) -> Dict:
+    async def execute_workflow(self, name: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Execute a saved workflow"""
         if name not in self.workflows:
             return {"error": f"Workflow '{name}' not found"}
@@ -260,7 +260,7 @@ class AutomationAgent:
         workflow = self.workflows[name]
         results = []
         
-        for i, step in enumerate(workflow["steps"]):
+        for i, step in enumerate(workflow["steps"]): # type: ignore
             result = await self._execute_step(step, context)
             results.append({
                 "step": i + 1,
@@ -271,7 +271,7 @@ class AutomationAgent:
             # Pass result to next step's context
             if context is None:
                 context = {}
-            context[f"step_{i}_result"] = result
+            context[f"step_{i}_result"] = result # type: ignore
         
         return {
             "workflow": name,
@@ -279,7 +279,7 @@ class AutomationAgent:
             "results": results
         }
     
-    async def _execute_step(self, step: Dict, context: Dict = None) -> Any:
+    async def _execute_step(self, step: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Any:
         """Execute a single workflow step"""
         action = step.get("action")
         
@@ -288,6 +288,7 @@ class AutomationAgent:
             return "Waited"
         elif action == "transform":
             # Transform data based on rules
+            if context is None: context = {}
             data = context.get("data", "")
             transformation = step.get("transformation", "upper")
             if transformation == "upper":
@@ -297,6 +298,7 @@ class AutomationAgent:
             return data
         elif action == "filter":
             # Filter data based on criteria
+            if context is None: context = {}
             data = context.get("data", [])
             criteria = step.get("criteria", {})
             # Simple filtering logic

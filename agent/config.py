@@ -110,8 +110,10 @@ class Settings(BaseSettings):
     rag_bm25_k1: float = 1.5
     rag_bm25_b: float = 0.75
     rag_semantic_chunking: bool = True
-    rag_use_reranker: bool = False
     rag_disable_dense: bool = True
+    
+    # Intelligence & Specialization
+    niche_focus: str = ""
     
     # Pydantic v2 configuration
     model_config = SettingsConfigDict(

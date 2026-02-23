@@ -405,11 +405,19 @@ class OptimizationAgent:
     """Agent specialized in optimization and refinement"""
     
     async def optimize_query(self, query: str) -> str:
-        """Clean and refine a search query"""
+        """Clean and refine a search query with niche biasing"""
         if not query:
             return ""
-        # Simple stopword removal and trimming for "optimization"
+        
+        # Simple stopword removal and trimming
         cleaned = query.strip().lower()
+        
+        # Add niche focus if configured to "smarten" the search
+        from agent.config import get_settings # type: ignore
+        settings = get_settings()
+        if settings.niche_focus:
+            cleaned = f"{cleaned} {settings.niche_focus}"
+            
         return cleaned
     
     async def improve_answer(self, answer: str) -> str:

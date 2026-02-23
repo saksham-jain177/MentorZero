@@ -206,7 +206,11 @@ class ResearchAgent:
         search_queries = [query]
         if self.llm:
             # Generate related queries for comprehensive research
-            expanded = await self._expand_query(query)
+            # Pass niche_focus if available for smarter expansion
+            from agent.config import get_settings # type: ignore
+            settings = get_settings()
+            niche = settings.niche_focus
+            expanded = await self._expand_query(query, niche)
             search_queries.extend(expanded)
         
         # Search from multiple angles
@@ -267,12 +271,13 @@ class ResearchAgent:
         except Exception as e:
             logger.error(f"Failed to persist knowledge: {e}")
     
-    async def _expand_query(self, query: str) -> List[str]:
-        """Use LLM to generate related search queries"""
+    async def _expand_query(self, query: str, niche: str = "") -> List[str]:
+        """Use LLM to generate related search queries with optional niche biasing"""
         if not self.llm:
             return []
         
-        prompt = f"""Given the research topic: "{query}"
+        niche_clause = f" specifically within the niche of {niche}" if niche else ""
+        prompt = f"""Given the research topic: "{query}"{niche_clause}
         Generate 3 related search queries that would help gather comprehensive information.
         Return only the queries, one per line."""
         

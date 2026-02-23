@@ -6,6 +6,9 @@ from typing import List, Dict, Optional, Tuple
 import numpy as np
 from dataclasses import dataclass
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -98,7 +101,7 @@ Include specific details, examples, and technical terms that would appear in aut
                     for r in results
                 ]
         except Exception as e:
-            print(f"HyDE retrieval failed: {e}")
+            logger.error(f"HyDE retrieval failed: {e}")
             return []
         
         return []
@@ -149,15 +152,8 @@ Write only the rewritten queries, one per line."""
             # Add to results...
             pass
         
-        # Mock result for testing
-        results.append(
-            RetrievalResult(
-                text=f"Direct retrieval result for: {query}",
-                score=0.85,
-                source="direct",
-                method="semantic"
-            )
-        )
+        # No mock results to ensure transparency
+        pass
         
         return results
     
@@ -215,7 +211,7 @@ class CrossEncoderReranker:
             from sentence_transformers import CrossEncoder
             self.model = CrossEncoder(self.model_name)
         except ImportError:
-            print("CrossEncoder requires sentence-transformers")
+            logger.warning("CrossEncoder requires sentence-transformers. Reranking will use original order.")
             self.model = None
     
     def rerank(

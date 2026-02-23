@@ -60,26 +60,8 @@ class WebSearchTool:
             return formatted_results
             
         except Exception as e:
-            print(f"Search error, falling back to mock: {e}")
-            # Fallback to mock if search fails
-            return [
-                {
-                    "title": f"Result 1 for {query}",
-                    "url": "https://example.com/1",
-                    "snippet": f"Information about {query}",
-                    "content": "Quantum Computing uses Qubits to store information. Entanglement is a key feature. Superposition is essential.",
-                    "score": 0.95,
-                    "source": "mock"
-                },
-                {
-                    "title": f"Result 2 for {query}",
-                    "url": "https://example.com/2",
-                    "snippet": f"More on {query}",
-                    "content": "Quantum Computing uses Qubits to store information. Entanglement is a key feature. Superposition is essential.",
-                    "score": 0.90,
-                    "source": "mock"
-                }
-            ]
+            logger.error(f"Search error: {e}")
+            return []
     
     async def close(self):
         pass  # No longer need to close client

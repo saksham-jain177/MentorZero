@@ -7,7 +7,10 @@ from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass
 from enum import Enum
 import asyncio
+import logging
 import time
+
+logger = logging.getLogger(__name__)
 from concurrent.futures import ThreadPoolExecutor
 import psutil  # type: ignore[import-untyped]
 import json
@@ -97,7 +100,7 @@ class AgentOrchestrator:
     def register_agent(self, name: str, agent_instance: Any):
         """Register a specialized agent"""
         self.agents[name] = agent_instance
-        print(f"[OK] Registered agent: {name}")
+        logger.info(f"Registered agent: {name}")
     
     async def execute_tasks(
         self, 
@@ -349,35 +352,48 @@ class AgentOrchestrator:
 class SearchAgent:
     """Agent specialized in searching and research"""
     
-    async def web_search(self, query: str) -> Dict:
-        """Search the web for information"""
-        await asyncio.sleep(1)  # Simulate API call
-        return {
-            "query": query,
-            "results": [f"Result 1 for {query}", f"Result 2 for {query}"],
-            "sources": ["web"]
-        }
+    async def web_search(self, query: str) -> Dict[str, Any]:
+        """Search the web for information using real providers"""
+        from agent.core.search_providers import perform_web_search # type: ignore
+        return await perform_web_search(query)
     
-    async def deep_research(self, topic: str) -> Dict:
-        """Deep research on a topic"""
-        await asyncio.sleep(2)  # Simulate longer research
+    async def deep_research(self, topic: str) -> Dict[str, Any]:
+        """Deep research on a topic using the ResearchAgent"""
+        from agent.core.research_agent import ResearchAgent # type: ignore
+        agent = ResearchAgent()
+        result = await agent.research_topic(topic, depth="standard")
         return {
             "topic": topic,
-            "findings": f"Comprehensive research on {topic}",
-            "confidence": 0.85
+            "findings": result.facts,
+            "confidence": result.confidence,
+            "metadata": {
+                "sources_count": len(result.sources),
+                "timestamp": result.timestamp.isoformat()
+            }
         }
 
 
 class WritingAgent:
     """Agent specialized in content generation"""
     
-    async def summarize(self, content: str) -> str:
-        """Summarize content"""
-        await asyncio.sleep(0.5)
-        if not isinstance(content, str):
-            content = str(content)
-        preview = content[:50]  # type: ignore
-        return f"Summary of: {preview}..."
+    async def summarize(self, content: Any) -> str:
+        """Summarize content using simplified logic (LLM integration recommended)"""
+        if not content:
+            return "No content to summarize."
+        
+        # If content is a dict (like search results), extract snippets
+        if isinstance(content, dict):
+            if "results" in content:
+                content = " ".join([r.get("content", "") for r in content["results"][:3]])
+            elif "findings" in content:
+                content = " ".join(content["findings"][:5])
+        
+        text = str(content)
+        if len(text) < 200:
+            return text
+        
+        # Very basic extraction if no LLM
+        return f"Summary: {text[:200]}..." # type: ignore
     
     async def expand(self, outline: str) -> str:
         """Expand an outline into full content"""
@@ -389,9 +405,12 @@ class OptimizationAgent:
     """Agent specialized in optimization and refinement"""
     
     async def optimize_query(self, query: str) -> str:
-        """Optimize a search query"""
-        await asyncio.sleep(0.3)
-        return f"Optimized: {query}"
+        """Clean and refine a search query"""
+        if not query:
+            return ""
+        # Simple stopword removal and trimming for "optimization"
+        cleaned = query.strip().lower()
+        return cleaned
     
     async def improve_answer(self, answer: str) -> str:
         """Improve an answer's quality"""

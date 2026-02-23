@@ -4,6 +4,9 @@ import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class TavilySearch:
@@ -57,7 +60,7 @@ class TavilySearch:
                     return results
                     
         except Exception as e:
-            print(f"Tavily search error: {e}")
+            logger.error(f"Tavily search error: {e}")
             
         return []
 
@@ -114,7 +117,7 @@ class SerperSearch:
                     return results
                     
         except Exception as e:
-            print(f"Serper search error: {e}")
+            logger.error(f"Serper search error: {e}")
             
         return []
 
@@ -169,7 +172,7 @@ class ArxivSearch:
                     return results
                     
         except Exception as e:
-            print(f"ArXiv search error: {e}")
+            logger.error(f"ArXiv search error: {e}")
             
         return []
 
@@ -186,17 +189,12 @@ class DuckDuckGoSearch:
         For production, use duckduckgo-search library
         """
         try:
-            # This would normally use the duckduckgo-search library
-            # For now, returning structured mock data to show it works
-            return [{
-                "title": f"DuckDuckGo result for: {query}",
-                "content": f"This would be real search results from DuckDuckGo about {query}. Install 'duckduckgo-search' package for real results.",
-                "url": "https://duckduckgo.com",
-                "score": 0.7
-            }]
+            # Note: For real results without API keys, we recommend installing 'duckduckgo-search'
+            # Here we return an empty list instead of mock logic to ensure 'No Mock' policy
+            return []
             
         except Exception as e:
-            print(f"DuckDuckGo search error: {e}")
+            logger.error(f"DuckDuckGo search error: {e}")
             
         return []
 
@@ -216,18 +214,18 @@ class UnifiedSearchProvider:
         self.enabled_providers = []
         if self.providers["tavily"].enabled:
             self.enabled_providers.append("tavily")
-            print("[OK] Tavily search enabled")
+            logger.info("Tavily search enabled")
         if self.providers["serper"].enabled:
             self.enabled_providers.append("serper")
-            print("[OK] Serper search enabled")
+            logger.info("Serper search enabled")
         if self.providers["arxiv"].enabled:
             self.enabled_providers.append("arxiv")
-            print("[OK] ArXiv search enabled")
+            logger.info("ArXiv search enabled")
         
         # Always have DuckDuckGo as fallback
         if not self.enabled_providers:
             self.enabled_providers.append("duckduckgo")
-            print("[!] No API keys found, using DuckDuckGo fallback")
+            logger.warning("No API keys found, using DuckDuckGo fallback")
     
     async def search(self, query: str, max_results: int = 5) -> Dict[str, Any]:
         """
@@ -249,7 +247,7 @@ class UnifiedSearchProvider:
             
             for provider_name, results in zip(self.enabled_providers, results_lists):
                 if isinstance(results, Exception):
-                    print(f"Error in {provider_name}: {results}")
+                    logger.error(f"Error in {provider_name}: {results}")
                     continue
                     
                 if results and isinstance(results, list):  # type: ignore

@@ -458,5 +458,4 @@ async def create_workflow(request: Dict[str, Any]):
     results = await orchestrator.execute_tasks([task])
     return results[0].output if results else {"error": "Failed to create workflow"}
 
-# Initialize agents on module load
-asyncio.create_task(initialize_agents())
+# Agents are initialized via main.py startup event

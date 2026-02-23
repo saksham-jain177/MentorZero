@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MentorZero - AI Research Assistant</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         * {
             margin: 0;
@@ -332,6 +333,22 @@
             }
         }
 
+        /* Lucide Icon Styling */
+        .lucide {
+            width: 20px;
+            height: 20px;
+            stroke-width: 2px;
+        }
+
+        .agent-orb .lucide {
+            width: 28px;
+            height: 28px;
+        }
+
+        .btn .lucide {
+            margin-right: 0.5rem;
+        }
+
         /* Query Input Section */
         .query-section {
             background: rgba(30, 41, 59, 0.5);
@@ -592,27 +609,27 @@
         <!-- Agent Status Bar - Much cleaner than cards -->
         <div class="agents-status">
             <div class="agent-indicator" id="search-agent">
-                <div class="agent-orb">🔍</div>
+                <div class="agent-orb"><i data-lucide="search"></i></div>
                 <div class="agent-label">Search</div>
             </div>
 
             <div class="agent-indicator" id="research-agent">
-                <div class="agent-orb">📚</div>
+                <div class="agent-orb"><i data-lucide="book-open"></i></div>
                 <div class="agent-label">Research</div>
             </div>
 
             <div class="agent-indicator" id="writer-agent">
-                <div class="agent-orb">✍️</div>
+                <div class="agent-orb"><i data-lucide="pen-tool"></i></div>
                 <div class="agent-label">Writer</div>
             </div>
 
             <div class="agent-indicator" id="optimizer-agent">
-                <div class="agent-orb">⚡</div>
+                <div class="agent-orb"><i data-lucide="zap"></i></div>
                 <div class="agent-label">Optimizer</div>
             </div>
 
             <div class="agent-indicator" id="verifier-agent">
-                <div class="agent-orb">✅</div>
+                <div class="agent-orb"><i data-lucide="check-circle"></i></div>
                 <div class="agent-label">Verifier</div>
             </div>
         </div>
@@ -627,20 +644,32 @@
 
             <div class="mode-toggle">
                 <div class="mode-option selected" data-mode="adaptive">
-                    <strong>🧠 Adaptive</strong>
-                    <div style="font-size: 0.85rem; color: var(--text-dim); margin-top: 0.25rem;">
+                    <div
+                        style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+                        <i data-lucide="brain"></i>
+                        <strong>Adaptive</strong>
+                    </div>
+                    <div style="font-size: 0.85rem; color: var(--text-dim);">
                         Smart resource allocation
                     </div>
                 </div>
                 <div class="mode-option" data-mode="parallel">
-                    <strong>⚡ Parallel</strong>
-                    <div style="font-size: 0.85rem; color: var(--text-dim); margin-top: 0.25rem;">
+                    <div
+                        style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+                        <i data-lucide="zap"></i>
+                        <strong>Parallel</strong>
+                    </div>
+                    <div style="font-size: 0.85rem; color: var(--text-dim);">
                         Maximum speed
                     </div>
                 </div>
                 <div class="mode-option" data-mode="sequential">
-                    <strong>📝 Sequential</strong>
-                    <div style="font-size: 0.85rem; color: var(--text-dim); margin-top: 0.25rem;">
+                    <div
+                        style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+                        <i data-lucide="list"></i>
+                        <strong>Sequential</strong>
+                    </div>
+                    <div style="font-size: 0.85rem; color: var(--text-dim);">
                         Low resource usage
                     </div>
                 </div>
@@ -648,16 +677,16 @@
 
             <div class="action-buttons">
                 <button class="btn btn-primary" id="research-btn">
-                    <span>🚀</span>
+                    <i data-lucide="rocket"></i>
                     <span>Start Research</span>
                 </button>
                 <button class="btn btn-secondary" id="clear-btn">
-                    <span>🗑️</span>
+                    <i data-lucide="trash-2"></i>
                     <span>Clear</span>
                 </button>
                 <button class="btn" id="toggle-graph-btn"
                     style="background: linear-gradient(135deg, var(--accent), var(--primary));">
-                    <span>🕸️</span>
+                    <i data-lucide="network"></i>
                     <span>Knowledge Map</span>
                 </button>
             </div>
@@ -671,8 +700,10 @@
             </div>
             <div id="cy" style="width: 100%; height: 100%;"></div>
             <div class="graph-controls">
-                <button class="graph-btn" id="refresh-graph">🔄 Refresh</button>
-                <button class="graph-btn" id="fit-graph">🔍 Center</button>
+                <button class="graph-btn" id="refresh-graph"><i data-lucide="refresh-cw"
+                        style="width: 14px; height: 14px;"></i> Refresh</button>
+                <button class="graph-btn" id="fit-graph"><i data-lucide="maximize"
+                        style="width: 14px; height: 14px;"></i> Center</button>
             </div>
         </div>
 
@@ -807,7 +838,8 @@
                     summaryCard.innerHTML = `
                         <div class="result-header">
                             <div class="result-agent" style="color: var(--success);">
-                                <span>✅ Research Complete</span>
+                                <i data-lucide="check-circle"></i>
+                                <span>Research Complete</span>
                             </div>
                             <div class="result-time">Total time: ${data.total_time?.toFixed(2) || 0}s</div>
                         </div>
@@ -817,6 +849,7 @@
                         </div>
                     `;
                     resultsDiv.insertBefore(summaryCard, resultsDiv.firstChild);
+                    lucide.createIcons();
 
                     document.getElementById('progress').style.width = '100%';
                     ws.close();
@@ -865,6 +898,7 @@
             resultCard.innerHTML = `
                 <div class="result-header">
                     <div class="result-agent">
+                        <i data-lucide="activity"></i>
                         <span>${result.agent} - ${result.task}</span>
                     </div>
                     <div class="result-time">Duration: ${result.duration?.toFixed(2) || 0}s</div>
@@ -872,6 +906,7 @@
                 <div class="result-content">${outputContent}</div>
             `;
             resultsDiv.appendChild(resultCard);
+            lucide.createIcons();
         }
 
         function addResult(agentId, content) {
@@ -891,6 +926,7 @@
             resultCard.innerHTML = `
                 <div class="result-header">
                     <div class="result-agent">
+                        <i data-lucide="info"></i>
                         <span>${agentNames[agentId] || agentId}</span>
                     </div>
                     <div class="result-time">${new Date().toLocaleTimeString()}</div>
@@ -898,6 +934,7 @@
                 <div class="result-content">${content}</div>
             `;
             resultsDiv.appendChild(resultCard);
+            lucide.createIcons();
         }
 
         // Clear button with confirmation
@@ -1073,6 +1110,9 @@
                 document.getElementById('research-btn').click();
             }
         });
+
+        // Initialize Lucide icons
+        lucide.createIcons();
     </script>
 </body>
 

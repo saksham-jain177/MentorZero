@@ -36,11 +36,12 @@ Return only the code."""
                 "timestamp": datetime.now().isoformat()
             }
         
-        # Mock response for testing
+        # No mock fallback to ensure transparency
         return {
             "language": language,
-            "code": f"# Code for: {requirements}\n# Implementation here",
-            "requirements": requirements
+            "code": "# Code generation requires an active LLM connection.",
+            "requirements": requirements,
+            "error": "LLM client not available"
         }
     
     async def analyze_code(self, code: str) -> Dict:
@@ -135,15 +136,8 @@ Format: Question | A) option | B) option | C) option | D) option | Answer"""
             response = await self.llm.send_prompt(prompt)
             # Parse response into questions
             
-        # Mock questions for testing
-        questions = [
-            {
-                "question": f"What is the main purpose of {topic}?",
-                "options": ["A) Option 1", "B) Option 2", "C) Option 3", "D) Option 4"],
-                "answer": "A",
-                "explanation": "This is the fundamental concept."
-            }
-        ]
+        # No mock questions to ensure transparency
+        questions = []
         
         return {
             "topic": topic,
@@ -159,7 +153,7 @@ Format: Question | A) option | B) option | C) option | D) option | Answer"""
 Use simple words, analogies, and examples a child would understand."""
             return await self.llm.send_prompt(prompt)
         
-        return f"{concept} is like a toy that helps grown-ups do their work faster!"
+        return f"Explanation for '{concept}' requires an active LLM connection."
 
 
 class AnalysisAgent:
@@ -338,8 +332,8 @@ class CreativeAgent:
             # Parse response into list
             ideas = response.split('\n')
         else:
-            # Mock ideas
-            ideas = [f"Idea {i+1} about {topic}" for i in range(count)]
+            # Return empty list instead of mocks
+            ideas = []
         
         return ideas
     
@@ -349,7 +343,7 @@ class CreativeAgent:
             story_prompt = f"Write a {style} story about: {prompt}"
             return await self.llm.send_prompt(story_prompt)
         
-        return f"Once upon a time, {prompt}..."
+        return f"Story generation for '{prompt}' requires an active LLM connection."
     
     async def create_analogy(self, concept: str) -> str:
         """Create analogies to explain concepts"""
@@ -357,4 +351,4 @@ class CreativeAgent:
             prompt = f"Create a creative analogy to explain: {concept}"
             return await self.llm.send_prompt(prompt)
         
-        return f"{concept} is like a puzzle where each piece represents a different part."
+        return f"Analogy for '{concept}' requires an active LLM connection."

@@ -136,8 +136,7 @@ Format: Question | A) option | B) option | C) option | D) option | Answer"""
             response = await self.llm.send_prompt(prompt)
             # Parse response into questions
             
-        # No mock questions to ensure transparency
-        questions = []
+        # LLM response would be parsed here if available
         
         return {
             "topic": topic,
@@ -334,8 +333,8 @@ class CreativeAgent:
             # Parse response into list
             ideas = response.split('\n')
         else:
-            # Return empty list instead of mocks
-            ideas = []
+            # Handle no-LLM case gracefully
+            pass
         
         return ideas
     

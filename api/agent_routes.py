@@ -7,6 +7,10 @@ from pydantic import BaseModel  # type: ignore[import-untyped]
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from enum import Enum
 import asyncio
+import dataclasses
+import json
+import time
+from datetime import datetime
 
 from agent.core.orchestrator import (  # type: ignore[import-untyped]
     AgentOrchestrator,
@@ -291,8 +295,6 @@ async def research_websocket(websocket: WebSocket):
 
             # Callback for task completion
             async def on_complete(result: TaskResult):
-                import dataclasses, json
-                from datetime import datetime
                 output = result.output
                 # Safely convert output to a JSON-serializable form
                 if result.success and output is not None:
@@ -316,7 +318,6 @@ async def research_websocket(websocket: WebSocket):
                 })
             
             # Execute tasks with callbacks
-            import time
             start_time = time.time()
             
             results = await orchestrator.execute_tasks(

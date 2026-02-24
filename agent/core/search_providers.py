@@ -233,10 +233,14 @@ class UnifiedSearchProvider:
             self.enabled_providers.append("arxiv")
             logger.info("ArXiv search enabled")
         
-        # Always have DuckDuckGo as fallback
-        if not self.enabled_providers:
+        # Always attempt to include DuckDuckGo if possible (as a permanent fallback/broad search)
+        try:
+            from duckduckgo_search import DDGS # type: ignore
             self.enabled_providers.append("duckduckgo")
-            logger.warning("No API keys found, using DuckDuckGo fallback")
+            logger.info("DuckDuckGo search enabled")
+        except ImportError:
+            if not self.enabled_providers:
+                logger.warning("No search providers available. Install 'duckduckgo-search' for a free fallback.")
     
     async def search(self, query: str, max_results: int = 5) -> Dict[str, Any]:
         """

@@ -57,7 +57,7 @@ Configuration module for MentorZero.
 import os
 from functools import lru_cache
 from typing import Optional
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict # type: ignore
 
 
 class Settings(BaseSettings):

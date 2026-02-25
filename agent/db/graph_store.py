@@ -169,6 +169,47 @@ class GraphStore:
             logger.error(f"Error searching subgraph for {query}: {e}")
             return {"nodes": [], "edges": []}
 
+    def save_research_session(self, query: str, results_json: str, niche_focus: Optional[str] = None) -> str:
+        """Save a research session results for history"""
+        session_id = str(uuid.uuid4())
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    INSERT INTO research_sessions (id, query, results_json, niche_focus, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (session_id, query, results_json, niche_focus, datetime.now().isoformat()))
+            return session_id
+        except Exception as e:
+            logger.error(f"Error saving research session: {e}")
+            return ""
+
+    def get_research_history(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Retrieve recent research sessions"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute("""
+                    SELECT id, query, niche_focus, created_at 
+                    FROM research_sessions 
+                    ORDER BY created_at DESC LIMIT ?
+                """, (limit,)).fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Error retrieving research history: {e}")
+            return []
+
+    def get_session_results(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve full results for a specific session"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute("SELECT results_json FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
+                if row:
+                    return json.loads(row["results_json"])
+        except Exception as e:
+            logger.error(f"Error retrieving session results: {e}")
+        return None
+
 def hashlib_id(text: str) -> str:
     """Generate a consistent hash ID for a string"""
     import hashlib

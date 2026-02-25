@@ -10,6 +10,7 @@ import asyncio
 import dataclasses
 import json
 import time
+import os
 from datetime import datetime
 
 from agent.core.orchestrator import (  # type: ignore[import-untyped]
@@ -30,6 +31,7 @@ from agent.core.capabilities import (  # type: ignore[import-untyped]
     AutomationAgent,
     CreativeAgent
 )
+from agent.core.exporter import report_exporter # type: ignore[import-untyped]
 
 router = APIRouter(prefix="/api/v2", tags=["agents"])
 
@@ -70,6 +72,8 @@ class ResearchResponse(BaseModel):
     agents_used: List[str]
     mode: str
     system_stats: Dict[str, Any]
+    session_id: Optional[str] = None
+    timestamp: Optional[str] = None
     
     if TYPE_CHECKING:
         def __init__(self, **kwargs: Any) -> None: ...
@@ -147,7 +151,6 @@ async def research_topic(request: ResearchRequest):
         
         results = await orchestrator.execute_tasks(tasks, mode=execution_mode)
         
-        # Prepend the optimizer result for the final output
         if opt_results:
             results = opt_results + results
         
@@ -168,14 +171,28 @@ async def research_topic(request: ResearchRequest):
                 if result.agent_name not in agents_used:
                     agents_used.append(result.agent_name)
         
-        return ResearchResponse(
-            query=request.query,
-            results=formatted_results,
-            execution_time=execution_time,
-            agents_used=agents_used,
-            mode=request.mode,
-            system_stats=orchestrator.resource_monitor.get_system_stats()
-        )
+        response_data = {
+            "query": request.query,
+            "results": formatted_results,
+            "execution_time": execution_time,
+            "agents_used": agents_used,
+            "mode": request.mode,
+            "system_stats": orchestrator.resource_monitor.get_system_stats(),
+            "timestamp": datetime.now().isoformat()
+        }
+
+        # Save session to database for history
+        session_id = ""
+        research_agent = orchestrator.agents.get("research")
+        if research_agent and hasattr(research_agent, "graph_store"):
+            session_id = research_agent.graph_store.save_research_session(
+                query=request.query,
+                results_json=json.dumps(response_data),
+                niche_focus=getattr(orchestrator.agents.get("optimizer"), "niche_focus", None)
+            )
+        
+        response_data["session_id"] = session_id
+        return ResearchResponse(**response_data)
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -219,6 +236,43 @@ async def search_graph(query: str):
         return {"nodes": [], "edges": []}
     
     return research_agent.graph_store.search_subgraph(query)
+
+@router.get("/research/history")
+async def get_research_history(limit: int = 10):
+    """Retrieve history of research sessions"""
+    research_agent = orchestrator.agents.get("research")
+    if not research_agent:
+        return []
+    return research_agent.graph_store.get_research_history(limit)
+
+@router.get("/research/session/{session_id}")
+async def get_session_results(session_id: str):
+    """Get full results for a past research session"""
+    research_agent = orchestrator.agents.get("research")
+    if not research_agent:
+        raise HTTPException(status_code=404, detail="Research agent not found")
+    
+    results = research_agent.graph_store.get_session_results(session_id)
+    if not results:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return results
+
+@router.get("/research/export/{session_id}")
+async def export_session_report(session_id: str):
+    """Export a research session to Markdown"""
+    research_agent = orchestrator.agents.get("research")
+    if not research_agent:
+        raise HTTPException(status_code=404, detail="Research agent not found")
+    
+    results = research_agent.graph_store.get_session_results(session_id)
+    if not results:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    filepath = report_exporter.export_to_markdown(results)
+    if not filepath:
+        raise HTTPException(status_code=500, detail="Export failed")
+        
+    return {"message": "Report exported successfully", "path": os.path.basename(filepath)}
 
 @router.post("/execute/custom")
 async def execute_custom_workflow(tasks: List[Dict[str, Any]]):
@@ -340,7 +394,7 @@ async def research_websocket(websocket: WebSocket):
             # Execute tasks with callbacks
             start_time = time.time()
             
-            results = await orchestrator.execute_tasks(
+            results: List[TaskResult] = await orchestrator.execute_tasks(
                 tasks, 
                 mode=execution_mode,
                 on_task_start=on_start,
@@ -349,13 +403,41 @@ async def research_websocket(websocket: WebSocket):
             
             total_time = time.time() - start_time
             
-            # Send final summary
-            await websocket.send_json({
+            # Save WebSocket session to history
+            session_id = ""
+            research_agent = orchestrator.agents.get("research")
+            if research_agent and hasattr(research_agent, "graph_store"):
+                # Prepare a full result object similar to REST for history
+                ws_data = {
+                    "query": query,
+                    "results": [
+                        {
+                            "agent": r.agent_name,
+                            "task": r.task_type,
+                            "output": r.output if r.success else None,
+                            "error": r.error if not r.success else None,
+                            "duration": r.duration
+                        } for r in results
+                    ],
+                    "total_time": total_time,
+                    "timestamp": datetime.now().isoformat(),
+                    "source": "websocket"
+                }
+                session_id = research_agent.graph_store.save_research_session(
+                    query=query,
+                    results_json=json.dumps(ws_data),
+                    niche_focus=getattr(orchestrator.agents.get("optimizer"), "niche_focus", None)
+                )
+
+            # Send final summary with session_id
+            summary = {
                 "type": "research_complete",
                 "query": query,
                 "total_time": total_time,
-                "results_count": len(results)
-            })
+                "results_count": len(results),
+                "session_id": session_id
+            }
+            await websocket.send_json(summary)
             
     except Exception as e:
         try:

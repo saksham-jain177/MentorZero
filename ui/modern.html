@@ -165,6 +165,19 @@
             position: sticky;
             top: 0;
             z-index: 100;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 1rem;
         }
 
         .header h1 {
@@ -663,9 +676,33 @@
     <div class="bg-animation"></div>
 
     <header class="header">
-        <h1>MentorZero</h1>
-        <p class="subtitle">Multi-Agent AI Research Assistant</p>
+        <div class="header-left">
+            <h1>MentorZero</h1>
+            <p class="subtitle">Multi-Agent AI Research Assistant</p>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-secondary" id="history-toggle-btn">
+                <i data-lucide="history"></i>
+                <span>History</span>
+            </button>
+        </div>
     </header>
+
+    <!-- History Sidebar -->
+    <div id="history-sidebar"
+        style="position: fixed; top: 0; right: -400px; width: 400px; height: 100vh; background: var(--dark-lighter); z-index: 1000; box-shadow: -10px 0 30px rgba(0,0,0,0.5); transition: right 0.4s ease; display: flex; flex-direction: column;">
+        <div
+            style="padding: 2rem; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+            <h2 style="font-size: 1.5rem; color: var(--primary);">Research History</h2>
+            <button id="close-history" style="background: none; border: none; color: var(--text-dim); cursor: pointer;">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div id="history-list" style="flex: 1; overflow-y: auto; padding: 1.5rem;">
+            <!-- History items will be injected here -->
+            <p style="color: var(--text-dim); text-align: center; margin-top: 2rem;">Loading history...</p>
+        </div>
+    </div>
 
     <div class="container">
         <!-- Agent Status Bar - Much cleaner than cards -->
@@ -949,11 +986,126 @@
             };
         });
 
+        let currentSessionId = null;
+
         function displayResults(data) {
-            // No longer used for the main research button, but kept for compatibility
             const resultsDiv = document.getElementById('results');
-            // ... (rest as before)
+            resultsDiv.innerHTML = '';
+
+            // Track current session for export
+            if (data.session_id) {
+                currentSessionId = data.session_id;
+            }
+
+            // Add Export Header
+            const exportHeader = document.createElement('div');
+            exportHeader.style.display = 'flex';
+            exportHeader.style.justifyContent = 'flex-end';
+            exportHeader.style.marginBottom = '1rem';
+            exportHeader.innerHTML = `
+                <button class="btn btn-secondary" id="export-btn" style="padding: 0.5rem 1rem; font-size: 0.85rem;">
+                    <i data-lucide="download"></i> Export Markdown
+                </button>
+            `;
+            resultsDiv.appendChild(exportHeader);
+            lucide.createIcons();
+
+            data.results.forEach(result => {
+                addDetailedResult(result);
+            });
         }
+
+        // Initialize History
+        const historyBtn = document.getElementById('history-toggle-btn');
+        const historySidebar = document.getElementById('history-sidebar');
+        const closeHistory = document.getElementById('close-history');
+        const historyList = document.getElementById('history-list');
+
+        historyBtn.addEventListener('click', () => {
+            historySidebar.style.right = '0';
+            loadHistory();
+        });
+
+        closeHistory.addEventListener('click', () => {
+            historySidebar.style.right = '-400px';
+        });
+
+        async function loadHistory() {
+            try {
+                const response = await fetch('/api/v2/research/history');
+                const history = await response.json();
+
+                if (history.length === 0) {
+                    historyList.innerHTML = '<p style="color: var(--text-dim); text-align: center; margin-top: 2rem;">No research history found.</p>';
+                    return;
+                }
+
+                historyList.innerHTML = history.map(item => `
+                    <div class="history-item" onclick="loadSession('${item.id}')" style="background: rgba(15,23,42,0.5); padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; cursor: pointer; border: 1px solid rgba(255,255,255,0.05); transition: all 0.3s ease;">
+                        <h4 style="margin-bottom: 0.5rem; color: var(--text);">${item.query}</h4>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-dim);">
+                            <span>${new Date(item.created_at).toLocaleDateString()}</span>
+                            <span>${item.niche_focus || 'General'}</span>
+                        </div>
+                    </div>
+                `).join('');
+
+                // Add hover effects
+                document.querySelectorAll('.history-item').forEach(el => {
+                    el.addEventListener('mouseenter', () => el.style.borderColor = 'var(--primary)');
+                    el.addEventListener('mouseleave', () => el.style.borderColor = 'rgba(255,255,255,0.05)');
+                });
+
+            } catch (err) {
+                historyList.innerHTML = '<p style="color: var(--error); text-align: center; margin-top: 2rem;">Failed to load history.</p>';
+            }
+        }
+
+        window.loadSession = async (sessionId) => {
+            historySidebar.style.right = '-400px';
+            document.getElementById('loading').classList.add('active');
+            document.getElementById('results').innerHTML = '';
+
+            try {
+                const response = await fetch(`/api/v2/research/session/${sessionId}`);
+                const data = await response.json();
+                displayResults(data);
+
+                // Track session ID for export
+                currentSessionId = sessionId;
+            } catch (err) {
+                document.getElementById('results').innerHTML = `<div class="result-card" style="border-color: var(--error)">Error loading session: ${err.message}</div>`;
+            } finally {
+                document.getElementById('loading').classList.remove('active');
+            }
+        }
+
+        // Handle Export
+        document.addEventListener('click', async (e) => {
+            if (e.target.closest('#export-btn')) {
+                const btn = e.target.closest('#export-btn');
+                const originalContent = btn.innerHTML;
+
+                if (!currentSessionId) {
+                    alert("Please select a session from history or complete a new research first.");
+                    return;
+                }
+
+                btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Exporting...';
+                lucide.createIcons();
+
+                try {
+                    const response = await fetch(`/api/v2/research/export/${currentSessionId}`);
+                    const data = await response.json();
+                    alert(`Report exported successfully to: ${data.path}`);
+                } catch (err) {
+                    alert("Export failed. Please try again.");
+                } finally {
+                    btn.innerHTML = originalContent;
+                    lucide.createIcons();
+                }
+            }
+        });
 
         function addDetailedResult(result) {
             const resultsDiv = document.getElementById('results');

@@ -189,9 +189,9 @@ class DuckDuckGoSearch:
         For production, use duckduckgo-search library
         """
         try:
-            # Attempt to use duckduckgo-search library if installed
+            # Attempt to use ddgs library (newer version of duckduckgo-search)
             try:
-                from duckduckgo_search import DDGS # type: ignore
+                from ddgs import DDGS # type: ignore
                 with DDGS() as ddgs:
                     results = [r for r in ddgs.text(query, max_results=max_results)]
                     return [{
@@ -201,8 +201,20 @@ class DuckDuckGoSearch:
                         "score": 0.7
                     } for r in results]
             except ImportError:
-                logger.warning(f"DuckDuckGo search requested but 'duckduckgo-search' package not found. Install it for results without API keys.")
-                return []
+                # Fallback to duckduckgo_search if ddgs is not available
+                try:
+                    from duckduckgo_search import DDGS # type: ignore
+                    with DDGS() as ddgs:
+                        results = [r for r in ddgs.text(query, max_results=max_results)]
+                        return [{
+                            "title": r.get("title", ""),
+                            "content": r.get("body", ""),
+                            "url": r.get("href", ""),
+                            "score": 0.7
+                        } for r in results]
+                except ImportError:
+                    logger.warning(f"DuckDuckGo search requested but 'ddgs' or 'duckduckgo-search' package not found.")
+                    return []
             
         except Exception as e:
             logger.error(f"DuckDuckGo search error: {e}")
@@ -235,12 +247,17 @@ class UnifiedSearchProvider:
         
         # Always attempt to include DuckDuckGo if possible (as a permanent fallback/broad search)
         try:
-            from duckduckgo_search import DDGS # type: ignore
+            from ddgs import DDGS # type: ignore
             self.enabled_providers.append("duckduckgo")
-            logger.info("DuckDuckGo search enabled")
+            logger.info("DuckDuckGo search enabled via ddgs")
         except ImportError:
-            if not self.enabled_providers:
-                logger.warning("No search providers available. Install 'duckduckgo-search' for a free fallback.")
+            try:
+                from duckduckgo_search import DDGS # type: ignore
+                self.enabled_providers.append("duckduckgo")
+                logger.info("DuckDuckGo search enabled via duckduckgo-search")
+            except ImportError:
+                if not self.enabled_providers:
+                    logger.warning("No search providers available. Install 'ddgs' for a free fallback.")
     
     async def search(self, query: str, max_results: int = 5) -> Dict[str, Any]:
         """

@@ -101,19 +101,26 @@ async def research_topic(request: ResearchRequest):
         # Create task pipeline based on query complexity
         tasks = []
         
-        # Step 1: Optimize the query
-        tasks.append(AgentTask(
+        # Step 1: Optimize the query first to get niche biasing
+        optimizer_task = AgentTask(
             agent_name="optimizer",
             task_type="optimize_query",
             input_data=request.query,
             priority=10
-        ))
+        )
         
-        # Step 2: Parallel search and research
+        # We run the optimizer first so search agents can use the "niched" query
+        opt_results = await orchestrator.execute_tasks([optimizer_task])
+        optimized_query = request.query
+        if opt_results and opt_results[0].success:
+            optimized_query = opt_results[0].output
+            
+        # Step 2: Parallel search and research using the optimized query
+        tasks = []
         tasks.append(AgentTask(
             agent_name="search",
             task_type="web_search",
-            input_data=request.query,
+            input_data=optimized_query,
             priority=8
         ))
         
@@ -121,7 +128,7 @@ async def research_topic(request: ResearchRequest):
             tasks.append(AgentTask(
                 agent_name="research",
                 task_type="research_topic",
-                input_data=request.query,
+                input_data=optimized_query,
                 priority=8
             ))
         
@@ -129,16 +136,20 @@ async def research_topic(request: ResearchRequest):
         tasks.append(AgentTask(
             agent_name="writer",
             task_type="summarize",
-            input_data="Combined research findings",
+            input_data=f"Combined research findings for: {optimized_query}",
             priority=5,
             requires=["web_search"]
         ))
         
-        # Execute tasks
+        # Execute remaining tasks
         import time
         start_time = time.time()
         
         results = await orchestrator.execute_tasks(tasks, mode=execution_mode)
+        
+        # Prepend the optimizer result for the final output
+        if opt_results:
+            results = opt_results + results
         
         execution_time = time.time() - start_time
         
@@ -275,15 +286,7 @@ async def research_websocket(websocket: WebSocket):
                 "sequential": ExecutionMode.SEQUENTIAL
             }
             execution_mode = mode_map.get(mode, ExecutionMode.ADAPTIVE)
-            
-            # Define tasks
-            tasks = [
-                AgentTask("optimizer", "optimize_query", query, priority=10),
-                AgentTask("search", "web_search", query, priority=8),
-                AgentTask("research", "research_topic", query, priority=7),
-                AgentTask("writer", "summarize", "Research findings", priority=5, requires=["web_search"])
-            ]
-            
+
             # Callback for task start
             async def on_start(task: AgentTask):
                 await websocket.send_json({
@@ -316,6 +319,23 @@ async def research_websocket(websocket: WebSocket):
                     "error": result.error if not result.success else None,
                     "duration": result.duration
                 })
+            
+            # Step 1: Optimize query for niche biasing
+            optimizer_task = AgentTask("optimizer", "optimize_query", query, priority=10)
+            await on_start(optimizer_task)
+            
+            opt_results = await orchestrator.execute_tasks([optimizer_task])
+            optimized_query = query
+            if opt_results and opt_results[0].success:
+                optimized_query = opt_results[0].output
+                await on_complete(opt_results[0])
+            
+            # Step 2: Define and execute secondary tasks with optimized query
+            tasks = [
+                AgentTask("search", "web_search", optimized_query, priority=8),
+                AgentTask("research", "research_topic", optimized_query, priority=7),
+                AgentTask("writer", "summarize", f"Research for {optimized_query}", priority=5, requires=["web_search"])
+            ]
             
             # Execute tasks with callbacks
             start_time = time.time()

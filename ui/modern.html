@@ -942,10 +942,17 @@
                         }
                     }
                 } else if (data.type === 'research_complete') {
+                    // Update global session ID for export
+                    if (data.session_id) {
+                        currentSessionId = data.session_id;
+                    }
+
                     // Show execution summary
                     const resultsDiv = document.getElementById('results');
                     const summaryCard = document.createElement('div');
                     summaryCard.className = 'result-card';
+
+                    // Add Export Button to the summary
                     summaryCard.innerHTML = `
                         <div class="result-header">
                             <div class="result-agent" style="color: var(--success);">
@@ -954,9 +961,14 @@
                             </div>
                             <div class="result-time">Total time: ${data.total_time?.toFixed(2) || 0}s</div>
                         </div>
-                        <div class="result-content">
-                            <strong>Query:</strong> ${data.query || ''}<br>
-                            <strong>Tasks Completed:</strong> ${data.results_count || 0}
+                        <div class="result-content" style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <strong>Query:</strong> ${data.query || ''}<br>
+                                <strong>Tasks Completed:</strong> ${data.results_count || 0}
+                            </div>
+                            <button class="btn btn-secondary" id="export-btn" style="padding: 0.5rem 1rem; font-size: 0.85rem;">
+                                <i data-lucide="download"></i> Export Markdown
+                            </button>
                         </div>
                     `;
                     resultsDiv.insertBefore(summaryCard, resultsDiv.firstChild);

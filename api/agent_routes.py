@@ -23,7 +23,6 @@ from agent.core.orchestrator import (  # type: ignore[import-untyped]
     OptimizationAgent
 )
 from agent.core.research_agent import ResearchAgent  # type: ignore[import-untyped]
-from agent.core.hyde_retriever import HyDERetriever  # type: ignore[import-untyped]
 from agent.core.capabilities import (  # type: ignore[import-untyped]
     CodeGenerationAgent,
     LearningAgent,

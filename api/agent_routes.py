@@ -348,6 +348,7 @@ async def research_websocket(websocket: WebSocket):
             data = await websocket.receive_json()
             query = data.get("query", "")
             mode = data.get("mode", "adaptive")
+            force_refresh = data.get("force_refresh", False)
             
             if not query:
                 await websocket.send_json({"type": "error", "message": "No query provided"})
@@ -366,6 +367,14 @@ async def research_websocket(websocket: WebSocket):
                 "sequential": ExecutionMode.SEQUENTIAL
             }
             execution_mode = mode_map.get(mode, ExecutionMode.ADAPTIVE)
+
+            # GLOBAL SETTINGS OVERRIDE for this session
+            from agent.config import get_settings
+            settings = get_settings()
+            original_ttl = settings.cache_ttl_hours
+            if force_refresh:
+                settings.cache_ttl_hours = 0  # Bypass durable cache
+                logger.info("Force refresh enabled: Bypassing cache for this session.")
 
             # Callback for task start
             async def on_start(task: AgentTask):
@@ -472,6 +481,9 @@ async def research_websocket(websocket: WebSocket):
                 "results_count": len(results),
                 "session_id": session_id
             }
+            # Restore settings
+            settings.cache_ttl_hours = original_ttl
+            
             await websocket.send_json(summary)
             
     except Exception as e:

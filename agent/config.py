@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # Intelligence & Specialization
     niche_focus: str = ""
     
+    # Caching settings
+    cache_ttl_hours: int = 24
+    semantic_cache_threshold: float = 0.9
+    
     # Pydantic v2 configuration
     model_config = SettingsConfigDict(
         env_file=".env",

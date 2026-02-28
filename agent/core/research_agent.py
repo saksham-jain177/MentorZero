@@ -5,6 +5,9 @@ Actively researches topics instead of just storing static text
 from typing import Dict, List, Optional, Any
 import asyncio
 import httpx  # type: ignore[import-untyped]
+import re
+from agent.core.cache_manager import cache_manager # type: ignore
+from agent.config import get_settings # type: ignore
 from dataclasses import dataclass
 from datetime import datetime
 import json
@@ -257,9 +260,16 @@ class ResearchAgent:
             if (datetime.now() - cached.timestamp).seconds < 3600:  # 1 hour cache
                 return cached
         
-        # CROSS-SESSION KNOWLEDGE RETRIEVAL
+        # 2. SEMANTIC REUSE & CROSS-SESSION KNOWLEDGE
+        # Check if we already have a direct or high-similarity match for this query
+        semantic_threshold = get_settings().semantic_cache_threshold
         past_knowledge = self.vector_store.query_related_knowledge(query, n_results=10)
-        logger.info(f"Retrieved {len(past_knowledge)} related facts from persistent memory")
+        
+        # Determine if we can skip/optimize based on current knowledge
+        has_deep_knowledge = len(past_knowledge) > 5
+        context_summary = "\n".join([f"- {k}" for k in past_knowledge]) if past_knowledge else "None."
+        
+        logger.info(f"Retrieved {len(past_knowledge)} related facts. Knowledge sufficient: {has_deep_knowledge}")
         
         # STORM PATTERN: Persona-Driven Query Expansion
         search_queries = [query]
@@ -272,7 +282,8 @@ class ResearchAgent:
             personas = await self._generate_personas(query, niche)
             logger.info(f"Generated expert personas: {personas}")
             
-            persona_tasks = [self._expand_query_as_persona(query, p) for p in personas]
+            # Optimization: If we have past knowledge, ask personas to focus on GAPS
+            persona_tasks = [self._expand_query_as_persona(query, p, context=context_summary if has_deep_knowledge else None) for p in personas]
             expanded_lists = await asyncio.gather(*persona_tasks)
             for sub_list in expanded_lists:
                 search_queries.extend(sub_list)
@@ -423,17 +434,26 @@ List the top 3 missing pieces of information."""
             return await self.research_topic(user_query)
     
     async def _generate_personas(self, query: str, niche: str = "") -> List[str]:
-        """Generate 2-3 expert personas to look at the topic from different angles"""
+        """Generate 2-3 expert personas to look at the topic from different angles with memoization"""
+        cache_key = f"personas:{query}:{niche}"
+        cached = cache_manager.get(cache_key, ttl_hours=24 * 7) # 1 week TTL for personas
+        if cached:
+            logger.info(f"Using memoized personas for: {query}")
+            return cached
+
         prompt = f"Given the research topic '{query}'{f' in the {niche} field' if niche else ''}, name 3 distinct expert personas who would have unique perspectives on this (e.g. 'Security Auditor', 'Market Analyst', 'History Professor'). Return as a simple comma-separated list."
         try:
             res = await self.llm.send_prompt(prompt)
-            return [p.strip() for p in res.split(",")][:3]
+            personas = [p.strip() for p in res.split(",")][:3]
+            cache_manager.set(cache_key, personas, provider="llm_planning")
+            return personas
         except:
             return ["General Researcher"]
 
-    async def _expand_query_as_persona(self, query: str, persona: str) -> List[str]:
+    async def _expand_query_as_persona(self, query: str, persona: str, context: Optional[str] = None) -> List[str]:
         """Generate targeted queries from a specific expert persona's viewpoint"""
-        prompt = f"As a {persona}, what are 2 highly specific search queries you would use to investigate '{query}'? Return only the queries, one per line."
+        context_clause = f"\n\nWe already know:\n{context}\nFocus ONLY on finding NEW or updated information." if context else ""
+        prompt = f"As a {persona}, what are 2 highly specific search queries you would use to investigate '{query}'?{context_clause}\nReturn only the queries, one per line."
         try:
             res = await self.llm.send_prompt(prompt)
             return [q.strip() for q in res.split('\n') if q.strip()][:2]

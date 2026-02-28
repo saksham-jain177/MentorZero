@@ -5,6 +5,8 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import json
 import logging
+from agent.core.cache_manager import cache_manager # type: ignore
+from agent.config import get_settings # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -263,9 +265,17 @@ class UnifiedSearchProvider:
     
     async def search(self, query: str, max_results: int = 5, depth: str = "standard") -> Dict[str, Any]:
         """
-        Search across all enabled providers
-        Returns aggregated and deduplicated results
+        Search across all enabled providers with caching
         """
+        settings = get_settings()
+        cache_key = f"search:{query}:{max_results}:{depth}"
+        
+        # 1. Check Durable Cache first
+        cached_results = cache_manager.get(cache_key, ttl_hours=settings.cache_ttl_hours)
+        if cached_results:
+            logger.info(f"Serving cached search results for: {query}")
+            return cached_results
+
         all_results = []
         sources_used = []
         
@@ -308,13 +318,19 @@ class UnifiedSearchProvider:
                 if len(unique_results) >= max_results * 2:  # Keep more for diversity
                     break
         
-        return {
+        final_response = {
             "query": query,
             "results": unique_results[:max_results],  # type: ignore
             "sources": sources_used,
             "timestamp": datetime.now().isoformat(),
-            "total_found": len(all_results)
+            "total_found": len(all_results),
+            "cached": False
         }
+        
+        # 3. Save to Durable Cache
+        cache_manager.set(cache_key, final_response, provider="unified_search")
+        
+        return final_response
 
 
 # Global instance

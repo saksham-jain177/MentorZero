@@ -948,10 +948,12 @@
 
             ws.onopen = () => {
                 console.log('🚀 WebSocket connected, sending query...');
-                ws.send(JSON.stringify({
+                const data = {
                     query: query,
-                    mode: mode
-                }));
+                    mode: mode,
+                    force_refresh: document.getElementById('force-refresh').checked
+                };
+                ws.send(JSON.stringify(data));
             };
 
             ws.onmessage = (event) => {
@@ -1218,6 +1220,16 @@
                         <i data-lucide="info"></i>
                         <span>${agentNames[agentId] || agentId}</span>
                     </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="include-sources" checked>
+                        <span class="slider"></span>
+                        <span class="label">Include Sources</span>
+                    </label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="force-refresh">
+                        <span class="slider"></span>
+                        <span class="label">Force Refresh (Bypass Cache)</span>
+                    </label>
                     <div class="result-time">${new Date().toLocaleTimeString()}</div>
                 </div>
                 <div class="result-content">${content}</div>

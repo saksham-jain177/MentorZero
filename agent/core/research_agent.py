@@ -10,6 +10,7 @@ from datetime import datetime
 import json
 import hashlib
 import logging
+import re
 from agent.db.graph_store import GraphStore  # type: ignore
 
 logger = logging.getLogger(__name__)
@@ -34,14 +35,14 @@ class WebSearchTool:
         from agent.core.search_providers import perform_web_search  # type: ignore[import-untyped]
         self.perform_search = perform_web_search
     
-    async def search(self, query: str, max_results: int = 5) -> List[Dict]:
+    async def search(self, query: str, max_results: int = 5, depth: str = "standard") -> List[Dict]:
         """
         Search the web for current information
         Uses Tavily, Serper, ArXiv, or DuckDuckGo based on what's configured
         """
         try:
-            # Use the real search provider
-            search_results = await self.perform_search(query, max_results)
+            # Use the real search provider with depth support
+            search_results = await self.perform_search(query, max_results=max_results)
             
             # Format results for the research agent
             formatted_results = []
@@ -49,18 +50,18 @@ class WebSearchTool:
                 formatted_results.append({
                     "title": result.get("title", ""),
                     "url": result.get("url", ""),
-                    "snippet": result.get("content", "")[:200],
+                    "snippet": result.get("content", "")[:300], # Increased snippet size
                     "content": result.get("content", ""),
                     "score": result.get("score", 0.5), # type: ignore
                     "source": result.get("source", "unknown")
                 })
             if not formatted_results:
-                raise ValueError("No results found in search response")
+                logger.warning(f"No results found for query: {query}")
                 
             return formatted_results
             
         except Exception as e:
-            logger.error(f"Search error: {e}")
+            logger.error(f"Search error for '{query}': {e}")
             return []
     
     async def close(self):
@@ -77,49 +78,77 @@ class FactVerifier:
         """
         Extract facts that appear in multiple sources
         Higher confidence for facts mentioned more frequently
+        Uses normalized text matching to catch overlapping concepts
         """
         fact_counts = {}
         fact_sources = {}
         
+        # Heuristic stop words for normalization
+        stop_words = {"the", "a", "an", "is", "are", "was", "were", "in", "on", "at", "to", "for", "with", "by", "of"}
+        
         for source in sources:
             content = source.get("content", "")
-            # Simple fact extraction - enhance with NLP
-            sentences = content.split(". ")
+            if not content:
+                continue
+                
+            # Basic sentence splitting
+            sentences = re.split(r'[.!?]\s+', content)
             
             for sentence in sentences:
-                sentence = sentence.strip(".")
-                if len(sentence) > 20:  # Basic filter
-                    fact_hash = hashlib.md5(sentence.lower().encode()).hexdigest()
-                    fact_counts[fact_hash] = fact_counts.get(fact_hash, 0) + 1
-                    if fact_hash not in fact_sources:
-                        fact_sources[fact_hash] = {
+                sentence = sentence.strip()
+                if len(sentence) > 30 and len(sentence) < 400:  # Sensible range for a "fact"
+                    # Normalize for matching: lower case, remove punctuation, strip stop words
+                    normalized = re.sub(r'[^\w\s]', '', sentence.lower())
+                    words = [w for w in normalized.split() if w not in stop_words]
+                    match_key = " ".join(words[:15]) # Use first 15 meaningful words as key
+                    
+                    if not match_key:
+                        continue
+                        
+                    fact_counts[match_key] = fact_counts.get(match_key, 0) + 1
+                    if match_key not in fact_sources:
+                        fact_sources[match_key] = {
                             "text": sentence,
-                            "sources": []
+                            "sources": set()
                         }
-                    fact_sources[fact_hash]["sources"].append(source.get("url", ""))  # type: ignore
+                    fact_sources[match_key]["sources"].add(source.get("url", ""))
         
         # Return facts with confidence scores
         verified_facts = []
-        for fact_hash, data in fact_sources.items():
-            if fact_counts[fact_hash] > 1:  # Mentioned in multiple sources
-                verified_facts.append({
-                    "fact": data["text"],
-                    "confidence": min(fact_counts[fact_hash] / len(sources), 1.0),
-                    "sources": data["sources"]
-                })
+        total_sources = len(set(s.get("url", "") for s in sources)) or 1
+        
+        for match_key, data in fact_sources.items():
+            count = fact_counts[match_key]
+            # Boost facts mentioned in multiple sources
+            confidence = min(0.4 + (count / total_sources) * 0.6, 1.0) if count > 1 else 0.3
+            
+            verified_facts.append({
+                "fact": data["text"],
+                "confidence": confidence,
+                "sources": list(data["sources"]),
+                "frequency": count
+            })
         
         logger.info(f"Verified {len(verified_facts)} facts from {len(sources)} sources")
         
-        return sorted(verified_facts, key=lambda x: x["confidence"], reverse=True)
+        # Sort by confidence and frequency
+        return sorted(verified_facts, key=lambda x: (x["confidence"], x["frequency"]), reverse=True)
 
 
 class KnowledgeGraphBuilder:
     """Builds structured knowledge from research results"""
     
-    def build(self, facts: List[Dict], query: str) -> Dict:
+    async def build(self, facts: List[Dict], query: str, llm_client: Any = None) -> Dict:
         """
-        Create a knowledge graph from verified facts
+        Create a knowledge graph from verified facts.
+        If LLM is available, uses it for high-quality extraction.
         """
+        if llm_client:
+            return await self._build_with_llm(facts, query, llm_client)
+        return self._build_heuristic(facts, query)
+
+    def _build_heuristic(self, facts: List[Dict], query: str) -> Dict:
+        """Fallback heuristic-based graph building"""
         graph = {
             "central_topic": query,
             "entities": [],
@@ -127,42 +156,66 @@ class KnowledgeGraphBuilder:
             "key_facts": []
         }
         
-        # Add central topic as primary node
         topic_id = self._hash_id(query)
-        entities: List[Dict[str, Any]] = graph["entities"]  # type: ignore
+        entities: List[Dict[str, Any]] = graph["entities"]
         entities.append({"id": topic_id, "name": query, "type": "topic"})
         
-        for fact_data in facts[:10]:  # type: ignore
+        for fact_data in facts[:15]:
             fact = fact_data["fact"]
-            key_facts: List[Dict[str, Any]] = graph["key_facts"]  # type: ignore
-            key_facts.append({
+            graph["key_facts"].append({
                 "text": fact,
                 "confidence": fact_data["confidence"]
             })
             
-            # Simple Entity Extraction
-            words = fact.split()
+            # Simple Entity Extraction (Capitalized words)
             extracted_entities = []
+            words = re.findall(r'\b[A-Z][a-z]{2,}\b', fact)
             for word in words:
-                clean_word = word.strip(".,;:\"'()").capitalize()
-                if len(clean_word) > 2 and clean_word[0].isupper() and clean_word.lower() not in ["the", "this", "that", "with", "from", "they"]:
-                    entity_id = self._hash_id(clean_word)
-                    if not any(e["id"] == entity_id for e in entities): # type: ignore
-                        entities.append({"id": entity_id, "name": clean_word, "type": "entity"}) # type: ignore
-                    extracted_entities.append(entity_id)
+                if word.lower() in ["the", "this", "that", "with", "from", "they", "there", "their"]:
+                    continue
+                entity_id = self._hash_id(word)
+                if not any(e["id"] == entity_id for e in entities):
+                    entities.append({"id": entity_id, "name": word, "type": "entity"})
+                extracted_entities.append(entity_id)
             
-            # Create relationships
-            relationships: List[Dict[str, Any]] = graph["relationships"]  # type: ignore
-            for eid in extracted_entities:
+            relationships: List[Dict[str, Any]] = graph["relationships"]
+            for eid in set(extracted_entities):
                 if eid != topic_id:
                     relationships.append({
                         "source": topic_id,
                         "target": eid,
                         "relation": "relates_to",
-                        "metadata": {"fact": fact}
+                        "metadata": {"fact": fact[:100] + "..."}
                     })
         
         return graph
+
+    async def _build_with_llm(self, facts: List[Dict], query: str, llm: Any) -> Dict:
+        """Premium LLM-powered graph construction"""
+        fact_text = "\n".join([f"- {f['fact']}" for f in facts[:10]])
+        prompt = f"""Based on these facts about "{query}":
+{fact_text}
+
+Extract a knowledge graph in JSON format:
+{{
+  "entities": [{{ "id": "uuid", "name": "Name", "type": "Type" }}],
+  "relationships": [{{ "source": "uuid", "target": "uuid", "relation": "Type" }}]
+}}
+Focus on core concepts and meaningful relationships like "developed_by", "component_of", "solved_by"."""
+
+        try:
+            response = await llm.send_prompt(prompt)
+            # Find JSON block
+            match = re.search(r'\{.*\}', response, re.DOTALL)
+            if match:
+                graph_data = json.loads(match.group(0))
+                graph_data["central_topic"] = query
+                graph_data["key_facts"] = [{"text": f["fact"], "confidence": f["confidence"]} for f in facts[:10]]
+                return graph_data
+        except Exception as e:
+            logger.error(f"LLM Graph Builder failed: {e}")
+            
+        return self._build_heuristic(facts, query)
 
     def _hash_id(self, text: str) -> str:
         import hashlib
@@ -213,31 +266,53 @@ class ResearchAgent:
             expanded = await self._expand_query(query, niche)
             search_queries.extend(expanded)
         
-        # Search from multiple angles
+        # Search from multiple angles in parallel! (Major Optimization)
+        num_queries = 2 if depth == "quick" else 4 if depth == "standard" else 6
+        search_tasks = [self.web_search.search(q, depth=depth) for q in search_queries[:num_queries]]
+        
+        results_lists = await asyncio.gather(*search_tasks)
         all_sources = []
-        for q in search_queries[:3]:  # type: ignore
-            results = await self.web_search.search(q)
-            all_sources.extend(results)
+        for r_list in results_lists:
+            all_sources.extend(r_list)
         
         # Verify and cross-reference facts
         verified_facts = self.fact_verifier.cross_reference(all_sources)
-        logger.info(f"Verified facts: {[f['fact'] for f in verified_facts]}")
         
-        # Build knowledge graph
-        knowledge_graph = self.graph_builder.build(verified_facts, query)
-        logger.info(f"Entities in graph: {[e['name'] for e in knowledge_graph['entities']]}")
-        logger.info(f"Relationships in graph: {len(knowledge_graph['relationships'])}")
+        # Build knowledge graph (LLM-aware)
+        knowledge_graph = await self.graph_builder.build(verified_facts, query, self.llm)
         
         # Calculate overall confidence
-        avg_confidence = sum(f["confidence"] for f in verified_facts[:20]) / len(verified_facts[:20]) if verified_facts else 0  # type: ignore
+        relevant_facts = verified_facts[:20]
+        avg_confidence = sum(f["confidence"] for f in relevant_facts) / len(relevant_facts) if relevant_facts else 0
         
         # Persist to Graph Store
         self._persist_knowledge(knowledge_graph)
         
+        # IMPROVISED: Self-Correction Loop (Gap Analysis)
+        # If depth is deep and we have low confidence, try to fill gaps
+        if depth == "deep" and avg_confidence < 0.7 and self.llm:
+            logger.info(f"Research confidence low ({avg_confidence:.2f}). Triggering gap analysis...")
+            gap_result = await self.fill_knowledge_gaps([f["fact"] for f in verified_facts[:10]], query)
+            
+            # Merge results
+            all_sources.extend(gap_result.sources)
+            # Re-verify with new sources
+            verified_facts = self.fact_verifier.cross_reference(all_sources)
+            # Re-build graph
+            knowledge_graph = await self.graph_builder.build(verified_facts, query, self.llm)
+            # Recalculate confidence
+            relevant_facts = verified_facts[:20]
+            avg_confidence = sum(f["confidence"] for f in relevant_facts) / len(relevant_facts) if relevant_facts else 0
+
+        # IMPROVISED: Semantic Deduplication (concise insights)
+        unique_facts = [f["fact"] for f in verified_facts[:30]]
+        if self.llm and len(unique_facts) > 10:
+             unique_facts = await self._semantic_deduplicate(unique_facts)
+        
         result = ResearchResult(
             query=query,
             sources=all_sources,
-            facts=[f["fact"] for f in verified_facts[:30]],  # type: ignore
+            facts=unique_facts,
             confidence=avg_confidence,
             timestamp=datetime.now(),
             knowledge_graph=knowledge_graph
@@ -317,6 +392,26 @@ List the top 3 missing pieces of information."""
         except:
             return await self.research_topic(user_query)
     
+    async def _semantic_deduplicate(self, facts: List[str]) -> List[str]:
+        """Use LLM to remove redundancy and consolidate facts into core insights"""
+        if not facts or not self.llm:
+            return facts
+            
+        prompt = f"""These research facts contain redundancies. Consolidate them into a clean, non-repetitive list of the most important unique insights (max 15).
+        
+Facts:
+{chr(10).join(facts)}
+
+Return only the consolidated list, one item per line."""
+        
+        try:
+            response = await self.llm.send_prompt(prompt, temperature=0.3)
+            deduplicated = [line.strip().strip("- ") for line in response.split('\n') if line.strip() and len(line) > 20]
+            return deduplicated if deduplicated else facts
+        except Exception as e:
+            logger.error(f"Semantic deduplication failed: {e}")
+            return facts
+
     async def close(self):
         """Clean up resources"""
         await self.web_search.close()

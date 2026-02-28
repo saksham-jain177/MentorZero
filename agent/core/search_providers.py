@@ -17,9 +17,11 @@ class TavilySearch:
         self.base_url = "https://api.tavily.com"
         self.enabled = bool(self.api_key)
     
-    async def search(self, query: str, max_results: int = 5) -> List[Dict]:
+    async def search(self, query: str, max_results: int = 5, depth: str = "standard") -> List[Dict]:
         if not self.enabled:
             return []
+        
+        search_depth = "advanced" if depth in ["standard", "deep"] else "basic"
         
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -31,7 +33,7 @@ class TavilySearch:
                         "max_results": max_results,
                         "include_answer": True,
                         "include_raw_content": True,
-                        "search_depth": "advanced"
+                        "search_depth": search_depth
                     }
                 )
                 
@@ -259,7 +261,7 @@ class UnifiedSearchProvider:
                 if not self.enabled_providers:
                     logger.warning("No search providers available. Install 'ddgs' for a free fallback.")
     
-    async def search(self, query: str, max_results: int = 5) -> Dict[str, Any]:
+    async def search(self, query: str, max_results: int = 5, depth: str = "standard") -> Dict[str, Any]:
         """
         Search across all enabled providers
         Returns aggregated and deduplicated results
@@ -271,7 +273,11 @@ class UnifiedSearchProvider:
         tasks = []
         for provider_name in self.enabled_providers:
             provider = self.providers[provider_name]
-            tasks.append(provider.search(query, max_results))
+            # DuckDuckGo and ArXiv don't support explicit depth yet, but Tavily does
+            if provider_name == "tavily":
+                tasks.append(provider.search(query, max_results, depth=depth))
+            else:
+                tasks.append(provider.search(query, max_results))
             sources_used.append(provider_name)
         
         if tasks:

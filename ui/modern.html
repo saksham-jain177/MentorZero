@@ -26,7 +26,9 @@
             --success: #10b981;
             --warning: #f59e0b;
             --error: #ef4444;
-            --surface: rgba(30, 41, 59, 0.7);
+            --surface: rgba(30, 41, 59, 0.4);
+            --glass: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.1);
         }
 
         #graph-container {
@@ -362,36 +364,39 @@
             margin-right: 0.5rem;
         }
 
-        /* Query Input Section */
+        /* Query Section */
         .query-section {
-            background: rgba(30, 41, 59, 0.5);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: var(--surface);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border: 1px solid var(--glass-border);
             border-radius: 24px;
-            padding: 2rem;
+            padding: 2.5rem;
             margin-bottom: 2rem;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
         }
 
         .input-group {
             position: relative;
-            margin-bottom: 1.5rem;
+            margin-bottom: 2rem;
         }
 
         .query-input {
             width: 100%;
-            padding: 1.5rem 3rem 1.5rem 1.5rem;
-            background: rgba(15, 23, 42, 0.5);
-            border: 2px solid rgba(255, 255, 255, 0.1);
+            padding: 1.5rem 3.5rem 1.5rem 1.75rem;
+            background: rgba(15, 23, 42, 0.3);
+            border: 1px solid var(--glass-border);
             border-radius: 16px;
             color: var(--text);
-            font-size: 1.1rem;
-            transition: all 0.3s ease;
+            font-size: 1.15rem;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .query-input:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+            background: rgba(15, 23, 42, 0.5);
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.2);
         }
 
         .query-input::placeholder {
@@ -600,8 +605,38 @@
             color: var(--text);
         }
 
-        .stats-content {
-            transition: opacity 0.3s ease;
+        /* Agent State Badges */
+        .agent-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            color: var(--text-dim);
+            margin-left: 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .agent-badge.active {
+            background: rgba(99, 102, 241, 0.2);
+            color: var(--primary);
+            border-color: var(--primary);
+            animation: pulse-border 2s infinite;
+        }
+
+        @keyframes pulse-border {
+
+            0%,
+            100% {
+                border-color: var(--primary);
+            }
+
+            50% {
+                border-color: transparent;
+            }
         }
 
         .system-stats.collapsed .stats-content,
@@ -940,6 +975,22 @@
                             const currentProgress = parseFloat(document.getElementById('progress').style.width) || 0;
                             document.getElementById('progress').style.width = Math.min(currentProgress + 25, 100) + '%';
                         }
+                    }
+                } else if (data.type === 'graph_delta') {
+                    if (cy) {
+                        // Incremental update
+                        const eles = [];
+                        data.nodes.forEach(n => eles.push({ data: { id: n.data.id, label: n.data.label, type: n.data.type } }));
+                        data.edges.forEach(e => eles.push({ data: { id: e.data.id, source: e.data.source, target: e.data.target, label: e.data.label } }));
+
+                        if (eles.length > 0) {
+                            cy.add(eles);
+                            cy.layout({ name: 'cose', animate: true, fit: true }).run();
+                            document.getElementById('graph-status').textContent = `${cy.nodes().length} entities discovered`;
+                        }
+                    } else if (data.nodes.length > 0) {
+                        // First initialization
+                        initGraph(data);
                     }
                 } else if (data.type === 'research_complete') {
                     // Update global session ID for export

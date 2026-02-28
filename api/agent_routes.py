@@ -9,6 +9,18 @@ from enum import Enum
 import asyncio
 import dataclasses
 import json
+import re
+
+class SecurityManager:
+    @staticmethod
+    def sanitize_query(query: str, max_length: int = 500) -> str:
+        """Sanitize user input to prevent prompt injection and DoS"""
+        # Trim length
+        sanitized = query[:max_length]
+        # Remove common injection markers and system command attempts
+        sanitized = re.sub(r'(system:|you are|ignore all|as a|persona:|role:|instruction:)', '', sanitized, flags=re.IGNORECASE)
+        # Final cleanup of extra whitespace
+        return sanitized.strip()
 import time
 import os
 from datetime import datetime
@@ -101,6 +113,11 @@ async def research_topic(request: ResearchRequest):
         }
         execution_mode = mode_map.get(request.mode, ExecutionMode.ADAPTIVE)
         
+        # SECURITY: Sanitize user input
+        sanitized_query = SecurityManager.sanitize_query(request.query)
+        if not sanitized_query:
+             raise HTTPException(status_code=400, detail="Invalid or empty query after sanitization")
+        
         # Create task pipeline based on query complexity
         tasks = []
         
@@ -108,7 +125,7 @@ async def research_topic(request: ResearchRequest):
         optimizer_task = AgentTask(
             agent_name="optimizer",
             task_type="optimize_query",
-            input_data=request.query,
+            input_data=sanitized_query,
             priority=10
         )
         
@@ -321,6 +338,10 @@ async def research_websocket(websocket: WebSocket):
     """
     await websocket.accept()
     
+    # State for Delta Updates
+    sent_nodes = set()
+    sent_edges = set()
+    
     try:
         while True:
             # Receive query from client
@@ -330,6 +351,12 @@ async def research_websocket(websocket: WebSocket):
             
             if not query:
                 await websocket.send_json({"type": "error", "message": "No query provided"})
+                continue
+            
+            # SECURITY: Sanitize user input
+            sanitized_query = SecurityManager.sanitize_query(query)
+            if not sanitized_query:
+                await websocket.send_json({"type": "error", "message": "Invalid query after sanitization"})
                 continue
             
             # Map mode
@@ -353,16 +380,7 @@ async def research_websocket(websocket: WebSocket):
             async def on_complete(result: TaskResult):
                 output = result.output
                 # Safely convert output to a JSON-serializable form
-                if result.success and output is not None:
-                    if dataclasses.is_dataclass(output):
-                        # Convert dataclass to dict, serializing datetime fields as ISO strings
-                        raw = dataclasses.asdict(output)
-                        output = json.loads(json.dumps(raw, default=lambda o: o.isoformat() if isinstance(o, datetime) else str(o)))
-                    elif hasattr(output, '__dict__'):
-                        raw = output.__dict__
-                        output = json.loads(json.dumps(raw, default=lambda o: o.isoformat() if isinstance(o, datetime) else str(o)))
-                    elif not isinstance(output, (str, int, float, bool, list, dict)):
-                        output = str(output)
+                # Send agent update
                 await websocket.send_json({
                     "type": "agent_update",
                     "agent": result.agent_name,
@@ -372,13 +390,31 @@ async def research_websocket(websocket: WebSocket):
                     "error": result.error if not result.success else None,
                     "duration": result.duration
                 })
+
+                # DELTA UPDATE: Send only new graph elements
+                research_agent = orchestrator.agents.get("research")
+                if research_agent and hasattr(research_agent, "graph_store"):
+                    full_graph = research_agent.graph_store.get_full_graph()
+                    
+                    new_nodes = [n for n in full_graph.get("nodes", []) if n["data"]["id"] not in sent_nodes]
+                    new_edges = [e for e in full_graph.get("edges", []) if e["data"]["id"] not in sent_edges]
+                    
+                    if new_nodes or new_edges:
+                        await websocket.send_json({
+                            "type": "graph_delta",
+                            "nodes": new_nodes,
+                            "edges": new_edges
+                        })
+                        # Track what was sent
+                        for n in new_nodes: sent_nodes.add(n["data"]["id"])
+                        for e in new_edges: sent_edges.add(e["data"]["id"])
             
             # Step 1: Optimize query for niche biasing
-            optimizer_task = AgentTask("optimizer", "optimize_query", query, priority=10)
+            optimizer_task = AgentTask("optimizer", "optimize_query", sanitized_query, priority=10)
             await on_start(optimizer_task)
             
             opt_results = await orchestrator.execute_tasks([optimizer_task])
-            optimized_query = query
+            optimized_query = sanitized_query
             if opt_results and opt_results[0].success:
                 optimized_query = opt_results[0].output
                 await on_complete(opt_results[0])
@@ -408,7 +444,7 @@ async def research_websocket(websocket: WebSocket):
             if research_agent and hasattr(research_agent, "graph_store"):
                 # Prepare a full result object similar to REST for history
                 ws_data = {
-                    "query": query,
+                    "query": sanitized_query,
                     "results": [
                         {
                             "agent": r.agent_name,
@@ -423,7 +459,7 @@ async def research_websocket(websocket: WebSocket):
                     "source": "websocket"
                 }
                 session_id = research_agent.graph_store.save_research_session(
-                    query=query,
+                    query=sanitized_query,
                     results_json=json.dumps(ws_data),
                     niche_focus=getattr(orchestrator.agents.get("optimizer"), "niche_focus", None)
                 )
@@ -431,7 +467,7 @@ async def research_websocket(websocket: WebSocket):
             # Send final summary with session_id
             summary = {
                 "type": "research_complete",
-                "query": query,
+                "query": sanitized_query,
                 "total_time": total_time,
                 "results_count": len(results),
                 "session_id": session_id

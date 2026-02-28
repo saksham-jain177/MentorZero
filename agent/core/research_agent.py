@@ -11,7 +11,8 @@ import json
 import hashlib
 import logging
 import re
-from agent.db.graph_store import GraphStore  # type: ignore
+from agent.db.graph_store import GraphStore
+from agent.core.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -228,11 +229,12 @@ class ResearchAgent:
     instead of just retrieving from static database
     """
     
-    def __init__(self, llm_client=None, db_path: str = "./data/mentorzero.db"):
+    def __init__(self, llm_client=None, db_path: str = "./data/mentorzero.db", vector_db_path: str = "./data/vectorstore"):
         self.web_search = WebSearchTool()
         self.fact_verifier = FactVerifier()
         self.graph_builder = KnowledgeGraphBuilder()
         self.graph_store = GraphStore(db_path)
+        self.vector_store = VectorStore(vector_db_path)
         self.llm = llm_client
         self.research_cache = {}
     
@@ -255,15 +257,28 @@ class ResearchAgent:
             if (datetime.now() - cached.timestamp).seconds < 3600:  # 1 hour cache
                 return cached
         
-        # Expand query if we have LLM
+        # CROSS-SESSION KNOWLEDGE RETRIEVAL
+        past_knowledge = self.vector_store.query_related_knowledge(query, n_results=10)
+        logger.info(f"Retrieved {len(past_knowledge)} related facts from persistent memory")
+        
+        # STORM PATTERN: Persona-Driven Query Expansion
         search_queries = [query]
-        if self.llm:
-            # Generate related queries for comprehensive research
-            # Pass niche_focus if available for smarter expansion
-            from agent.config import get_settings # type: ignore
+        if self.llm and depth != "quick":
+            from agent.config import get_settings
             settings = get_settings()
             niche = settings.niche_focus
-            expanded = await self._expand_query(query, niche)
+            
+            # Generate expert personas for 360-degree coverage
+            personas = await self._generate_personas(query, niche)
+            logger.info(f"Generated expert personas: {personas}")
+            
+            persona_tasks = [self._expand_query_as_persona(query, p) for p in personas]
+            expanded_lists = await asyncio.gather(*persona_tasks)
+            for sub_list in expanded_lists:
+                search_queries.extend(sub_list)
+        elif self.llm:
+            # Fallback to simple expansion for quick mode
+            expanded = await self._expand_query(query)
             search_queries.extend(expanded)
         
         # Search from multiple angles in parallel! (Major Optimization)
@@ -288,6 +303,9 @@ class ResearchAgent:
         # Persist to Graph Store
         self._persist_knowledge(knowledge_graph)
         
+        # Persist to Vector Store (Persistent Memory)
+        self.vector_store.add_facts(verified_facts, query) # usage of query as session_id for now
+        
         # IMPROVISED: Self-Correction Loop (Gap Analysis)
         # If depth is deep and we have low confidence, try to fill gaps
         if depth == "deep" and avg_confidence < 0.7 and self.llm:
@@ -308,6 +326,18 @@ class ResearchAgent:
         unique_facts = [f["fact"] for f in verified_facts[:30]]
         if self.llm and len(unique_facts) > 10:
              unique_facts = await self._semantic_deduplicate(unique_facts)
+
+        # REFLECTION PASS: Self-Critique & Refinement
+        if self.llm and depth == "deep":
+            logger.info("Entering Reflection phase...")
+            reflection = await self._reflect_on_results(unique_facts, query)
+            if reflection.get("is_sufficient") is False and reflection.get("gap_query"):
+                logger.info(f"Reflection identified critical gap: {reflection['gap_query']}")
+                final_gap_res = await self.web_search.search(reflection["gap_query"], depth="standard")
+                all_sources.extend(final_gap_res)
+                # Final re-verify and merge
+                verified_facts = self.fact_verifier.cross_reference(all_sources)
+                unique_facts = await self._semantic_deduplicate([f["fact"] for f in verified_facts[:30]])
         
         result = ResearchResult(
             query=query,
@@ -392,6 +422,45 @@ List the top 3 missing pieces of information."""
         except:
             return await self.research_topic(user_query)
     
+    async def _generate_personas(self, query: str, niche: str = "") -> List[str]:
+        """Generate 2-3 expert personas to look at the topic from different angles"""
+        prompt = f"Given the research topic '{query}'{f' in the {niche} field' if niche else ''}, name 3 distinct expert personas who would have unique perspectives on this (e.g. 'Security Auditor', 'Market Analyst', 'History Professor'). Return as a simple comma-separated list."
+        try:
+            res = await self.llm.send_prompt(prompt)
+            return [p.strip() for p in res.split(",")][:3]
+        except:
+            return ["General Researcher"]
+
+    async def _expand_query_as_persona(self, query: str, persona: str) -> List[str]:
+        """Generate targeted queries from a specific expert persona's viewpoint"""
+        prompt = f"As a {persona}, what are 2 highly specific search queries you would use to investigate '{query}'? Return only the queries, one per line."
+        try:
+            res = await self.llm.send_prompt(prompt)
+            return [q.strip() for q in res.split('\n') if q.strip()][:2]
+        except:
+            return []
+
+    async def _reflect_on_results(self, facts: List[str], query: str) -> Dict:
+        """Analyze current findings for hallucinations, bias, or missing critical info"""
+        fact_bullet = "\n".join([f"- {f}" for f in facts[:10]])
+        prompt = f"""Review the following facts about '{query}':
+{fact_bullet}
+
+Critique this research:
+1. Is it sufficient to provide a comprehensive answer? (True/False)
+2. Is there a critical missing piece of information?
+3. If not sufficient, provide ONE highly targeted search query to fix it.
+
+Return JSON only: {{"is_sufficient": bool, "critique": "string", "gap_query": "string"}}"""
+        try:
+            res = await self.llm.send_prompt(prompt)
+            match = re.search(r'\{.*\}', res, re.DOTALL)
+            if match:
+                return json.loads(match.group(0))
+        except:
+            pass
+        return {"is_sufficient": True}
+
     async def _semantic_deduplicate(self, facts: List[str]) -> List[str]:
         """Use LLM to remove redundancy and consolidate facts into core insights"""
         if not facts or not self.llm:

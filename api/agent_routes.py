@@ -2,7 +2,7 @@
 New Agent-based API Routes
 Handles multi-agent orchestration and research workflows
 """
-from fastapi import APIRouter, HTTPException, BackgroundTasks, WebSocket  # type: ignore[import-untyped]
+from fastapi import APIRouter, HTTPException, BackgroundTasks, WebSocket, File, UploadFile, WebSocketDisconnect # type: ignore[import-untyped]
 from pydantic import BaseModel  # type: ignore[import-untyped]
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from enum import Enum
@@ -10,6 +10,11 @@ import asyncio
 import dataclasses
 import json
 import re
+import uuid
+import shutil
+import os
+import time
+from datetime import datetime
 
 class SecurityManager:
     @staticmethod
@@ -21,8 +26,6 @@ class SecurityManager:
         sanitized = re.sub(r'(system:|you are|ignore all|as a|persona:|role:|instruction:)', '', sanitized, flags=re.IGNORECASE)
         # Final cleanup of extra whitespace
         return sanitized.strip()
-import time
-import os
 from datetime import datetime
 
 from agent.core.orchestrator import (  # type: ignore[import-untyped]
@@ -97,6 +100,54 @@ class AgentStatus(BaseModel):
     
     if TYPE_CHECKING:
         def __init__(self, **kwargs: Any) -> None: ...
+
+@router.post("/research/upload")
+async def upload_seed_document(file: UploadFile = File(...)):
+    """Temporarily upload a PDF to be used as a seed document"""
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+        
+    temp_dir = "./data/temp_uploads"
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    file_id = str(uuid.uuid4())
+    file_path = os.path.join(temp_dir, f"{file_id}_{file.filename}")
+    
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        return {"file_id": file_id, "file_path": os.path.abspath(file_path), "filename": file.filename}
+    except Exception as e:
+        logger.error(f"Failed to upload file: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save file")
+
+@router.post("/research/voice")
+async def transcribe_voice(file: UploadFile = File(...)):
+    """Transcribe voice recording using Whisper"""
+    temp_dir = "./data/temp_voice"
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    file_id = str(uuid.uuid4())
+    file_path = os.path.join(temp_dir, f"{file_id}_{file.filename}")
+    
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        import whisper
+        # Use base model for a good balance of speed and accuracy
+        model = whisper.load_model("base")
+        result = model.transcribe(file_path)
+        
+        # Cleanup
+        os.remove(file_path)
+        
+        return {"text": result["text"].strip()}
+    except Exception as e:
+        logger.error(f"Transcription failed: {e}")
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=500, detail="Transcription failed")
 
 # API Endpoints
 @router.post("/research", response_model=ResearchResponse)
@@ -349,6 +400,8 @@ async def research_websocket(websocket: WebSocket):
             query = data.get("query", "")
             mode = data.get("mode", "adaptive")
             force_refresh = data.get("force_refresh", False)
+            seed_files = data.get("seed_files", []) # List of local paths
+            vision_enabled = data.get("vision_enabled", False)
             
             if not query:
                 await websocket.send_json({"type": "error", "message": "No query provided"})
@@ -431,7 +484,11 @@ async def research_websocket(websocket: WebSocket):
             # Step 2: Define and execute secondary tasks with optimized query
             tasks = [
                 AgentTask("search", "web_search", optimized_query, priority=8),
-                AgentTask("research", "research_topic", optimized_query, priority=7),
+                AgentTask("research", "research_topic", optimized_query, priority=7, input_data={
+                    "query": optimized_query, 
+                    "seed_documents": seed_files,
+                    "vision_enabled": vision_enabled
+                }),
                 AgentTask("writer", "summarize", f"Research for {optimized_query}", priority=5, requires=["web_search"])
             ]
             

@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Any
 import asyncio
 import httpx  # type: ignore[import-untyped]
 import re
+import os
 from agent.core.cache_manager import cache_manager # type: ignore
 from agent.config import get_settings # type: ignore
 from dataclasses import dataclass
@@ -14,6 +15,9 @@ import json
 import hashlib
 import logging
 import re
+import base64
+from typing import Dict, List, Optional, Any, Union
+from agent.core.pdf_parser import PDFParser
 from agent.db.graph_store import GraphStore
 from agent.core.vector_store import VectorStore
 
@@ -235,6 +239,7 @@ class ResearchAgent:
     def __init__(self, llm_client=None, db_path: str = "./data/mentorzero.db", vector_db_path: str = "./data/vectorstore"):
         self.web_search = WebSearchTool()
         self.fact_verifier = FactVerifier()
+        self.pdf_parser = PDFParser()
         self.graph_builder = KnowledgeGraphBuilder()
         self.graph_store = GraphStore(db_path)
         self.vector_store = VectorStore(vector_db_path)
@@ -244,7 +249,9 @@ class ResearchAgent:
     async def research_topic(
         self, 
         query: str, 
-        depth: str = "standard"
+        depth: str = "standard",
+        seed_documents: Optional[List[str]] = None,
+        vision_enabled: bool = False
     ) -> ResearchResult:
         """
         Actively research a topic using multiple sources
@@ -252,6 +259,8 @@ class ResearchAgent:
         Args:
             query: Topic to research
             depth: "quick" | "standard" | "deep"
+            seed_documents: List of paths to local PDFs to index first
+            vision_enabled: Whether to process images and charts
         """
         # Check cache first
         cache_key = f"{query}:{depth}"
@@ -260,6 +269,25 @@ class ResearchAgent:
             if (datetime.now() - cached.timestamp).seconds < 3600:  # 1 hour cache
                 return cached
         
+        # 1. PROCESS SEED DOCUMENTS (Multimodal Stage 17)
+        if seed_documents:
+            logger.info(f"Processing {len(seed_documents)} seed documents...")
+            for doc_path in seed_documents:
+                text = self.pdf_parser.extract_text(doc_path)
+                if text:
+                    # Ingest into vector store as facts
+                    # We use a simplified fact extraction here
+                    doc_sentences = re.split(r'[.!?]\s+', text)
+                    doc_facts = [{"fact": s.strip(), "confidence": 0.95, "sources": [doc_path]} for s in doc_sentences if len(s.strip()) > 30]
+                    self.vector_store.add_facts(doc_facts[:100], f"seed:{os.path.basename(doc_path)}")
+                    logger.info(f"Ingested {len(doc_facts[:100])} initial facts from {doc_path}")
+
+        # Vision Processing Hook (Stage 17)
+        if vision_enabled:
+             # This would be called during search result processing
+             # For now, we add a placeholder to demonstrate visibility
+             logger.info("Vision analysis enabled for this session.")
+
         # 2. SEMANTIC REUSE & CROSS-SESSION KNOWLEDGE
         # Check if we already have a direct or high-similarity match for this query
         semantic_threshold = get_settings().semantic_cache_threshold
@@ -303,6 +331,34 @@ class ResearchAgent:
         
         # Verify and cross-reference facts
         verified_facts = self.fact_verifier.cross_reference(all_sources)
+        
+        # 4. VISION ANALYSIS (Stage 17)
+        if vision_enabled and self.llm:
+            logger.info("Vision enabled: Analyzing charts and diagrams from search results...")
+            # Extract image URLs from search results
+            image_urls = []
+            for r in all_sources:
+                if isinstance(r, dict) and r.get("images"):
+                    image_urls.extend(r["images"])
+            
+            # Limit to top 3 images to save compute
+            for img_url in image_urls[:3]:
+                logger.info(f"Analyzing image: {img_url}")
+                # We need a way to download or proxy the image
+                # For now, we'll try to fetch it if it's a URL
+                try:
+                    img_path = await self._download_temp_image(img_url)
+                    if img_path:
+                        vision_insight = await self._analyze_vision(img_path, context=query)
+                        if vision_insight:
+                            verified_facts.append({
+                                "fact": f"[Visual Insight] {vision_insight}",
+                                "confidence": 0.9,
+                                "sources": [img_url]
+                            })
+                            logger.info(f"Extracted vision insight: {vision_insight[:50]}...")
+                except Exception as ve:
+                    logger.warning(f"Failed to analyze image {img_url}: {ve}")
         
         # Build knowledge graph (LLM-aware)
         knowledge_graph = await self.graph_builder.build(verified_facts, query, self.llm)
@@ -501,6 +557,60 @@ Return only the consolidated list, one item per line."""
             logger.error(f"Semantic deduplication failed: {e}")
             return facts
 
+    async def _download_temp_image(self, url: str) -> Optional[str]:
+        """Download a remote image to a temporary file for vision analysis"""
+        try:
+            import httpx
+            import tempfile
+            import os
+            
+            async with httpx.AsyncClient() as client:
+                res = await client.get(url, timeout=10)
+                if res.status_code == 200:
+                    ext = url.split('.')[-1].split('?')[0].lower()
+                    if ext not in ['jpg', 'jpeg', 'png', 'webp']:
+                        ext = 'jpg'
+                    
+                    fd, path = tempfile.mkstemp(suffix=f'.{ext}')
+                    with os.fdopen(fd, 'wb') as f:
+                        f.write(res.content)
+                    return path
+            return None
+        except Exception as e:
+            logger.error(f"Failed to download image {url}: {e}")
+            return None
+
+    async def _analyze_vision(self, image_path: str, context: str = "") -> str:
+        """Analyze an image or chart using a vision model"""
+        try:
+            from PIL import Image
+            import base64
+            from io import BytesIO
+
+            # Load and encode image
+            with Image.open(image_path) as img:
+                # Resize if too large
+                if img.width > 1024 or img.height > 1024:
+                    img.thumbnail((1024, 1024))
+                
+                buffered = BytesIO()
+                img.save(buffered, format="JPEG")
+                img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+            prompt = f"Analyze this image in the context of: {context}. Describe key insights, data points, or visual evidence."
+            
+            # Use LLM client with vision capability
+            response = await self.llm.generate(
+                prompt=prompt,
+                images=[img_base64],
+                model="moondream" # Prefer efficient local vision models
+            )
+            
+            return response
+        except Exception as e:
+            logger.error(f"Vision analysis failed: {e}")
+            return f"[Vision Error: {e}]"
+
     async def close(self):
         """Clean up resources"""
         await self.web_search.close()
@@ -516,10 +626,10 @@ async def demo():
     print(f"Found {len(result.facts)} verified facts")
     print(f"Confidence: {result.confidence:.2%}")
     if result.knowledge_graph:
-        print(f"Knowledge Graph: {len(result.knowledge_graph['entities'])} entities")  # type: ignore
+        print(f"Knowledge Graph: {len(result.knowledge_graph['nodes'])} nodes")
     
     # Show top facts
-    for fact in result.facts[:3]:  # type: ignore
+    for fact in result.facts[:3]:
         print(f"- {fact}")
     
     await agent.close()

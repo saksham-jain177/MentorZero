@@ -770,10 +770,36 @@
 
         <!-- Query Section -->
         <div class="query-section">
-            <div class="input-group">
+            <div class="input-group" style="position: relative;">
                 <input type="text" class="query-input" id="query-input"
                     placeholder="Ask anything... e.g., 'Research the latest advances in quantum computing'"
                     autocomplete="off">
+                <button id="voice-btn"
+                    style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-dim); cursor: pointer; transition: all 0.3s ease;">
+                    <i data-lucide="mic"></i>
+                </button>
+            </div>
+
+            <!-- Multimodal Controls (Stage 17) -->
+            <div style="display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center; flex-wrap: wrap;">
+                <div id="seed-docs-container" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <!-- Uploaded file tags will appear here -->
+                </div>
+                <button class="btn btn-secondary" id="upload-pdf-btn"
+                    style="padding: 0.4rem 0.8rem; font-size: 0.8rem; background: var(--glass);">
+                    <i data-lucide="file-up" style="width: 14px; height: 14px;"></i>
+                    <span>Add Seed PDF</span>
+                </button>
+                <input type="file" id="pdf-input" accept=".pdf" style="display: none;">
+
+                <div style="flex: 1;"></div>
+
+                <label class="toggle-switch"
+                    style="padding: 0.4rem 0.8rem; background: var(--glass); border-radius: 10px; border: 1px solid var(--glass-border);">
+                    <input type="checkbox" id="vision-toggle">
+                    <span class="slider"></span>
+                    <span class="label" style="font-size: 0.8rem;">Vision Analysis (OCR/Charts)</span>
+                </label>
             </div>
 
             <div class="mode-toggle">
@@ -951,7 +977,9 @@
                 const data = {
                     query: query,
                     mode: mode,
-                    force_refresh: document.getElementById('force-refresh').checked
+                    force_refresh: document.getElementById('force-refresh')?.checked || false,
+                    seed_files: uploadedFilePaths,
+                    vision_enabled: document.getElementById('vision-toggle').checked
                 };
                 ws.send(JSON.stringify(data));
             };
@@ -1429,6 +1457,133 @@
 
         // Initialize Lucide icons
         lucide.createIcons();
+
+        // Multimodal / PDF Upload Logic (Stage 17)
+        const uploadedFilePaths = [];
+        const pdfInput = document.getElementById('pdf-input');
+        const uploadBtn = document.getElementById('upload-pdf-btn');
+        const seedContainer = document.getElementById('seed-docs-container');
+
+        uploadBtn.addEventListener('click', () => pdfInput.click());
+
+        pdfInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                uploadBtn.disabled = true;
+                const originalText = uploadBtn.querySelector('span').textContent;
+                uploadBtn.querySelector('span').textContent = 'Uploading...';
+
+                const response = await fetch(`${API_BASE}/research/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    uploadedFilePaths.push(data.file_path);
+
+                    const tag = document.createElement('div');
+                    tag.className = 'seed-tag';
+                    tag.style.cssText = 'background: rgba(99, 102, 241, 0.2); color: var(--primary); padding: 0.2rem 0.6rem; border-radius: 15px; font-size: 0.75rem; display: flex; align-items: center; gap: 0.4rem; border: 1px solid var(--primary);';
+                    tag.innerHTML = `
+                        <span>${file.name}</span>
+                        <i data-lucide="x" style="width: 12px; height: 12px; cursor: pointer;" onclick="removeFile('${data.file_path}', this)"></i>
+                    `;
+                    seedContainer.appendChild(tag);
+                    lucide.createIcons();
+                } else {
+                    alert('Upload failed: ' + (await response.text()));
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Upload error');
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.querySelector('span').textContent = 'Add Seed PDF';
+                pdfInput.value = '';
+            }
+        });
+
+        window.removeFile = (path, el) => {
+            const index = uploadedFilePaths.indexOf(path);
+            if (index > -1) {
+                uploadedFilePaths.splice(index, 1);
+                el.closest('.seed-tag').remove();
+            }
+        };
+        // Voice-to-Query Logic (Stage 17)
+        const voiceBtn = document.getElementById('voice-btn');
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+
+        voiceBtn.addEventListener('click', async () => {
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+
+                    mediaRecorder.ondataavailable = (event) => {
+                        audioChunks.push(event.data);
+                    };
+
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        const formData = new FormData();
+                        formData.append('file', audioBlob, 'voice.wav');
+
+                        voiceBtn.innerHTML = '<i data-lucide="loader" class="spin"></i>';
+                        lucide.createIcons();
+
+                        try {
+                            const response = await fetch(`${API_BASE}/research/voice`, {
+                                method: 'POST',
+                                body: formData
+                            });
+                            const data = await response.json();
+                            if (data.text) {
+                                document.getElementById('query-input').value = data.text;
+                            }
+                        } catch (err) {
+                            console.error('Transcription failed:', err);
+                        } finally {
+                            voiceBtn.innerHTML = '<i data-lucide="mic"></i>';
+                            lucide.createIcons();
+                        }
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    voiceBtn.style.color = 'var(--error)';
+                    voiceBtn.classList.add('pulse');
+                } catch (err) {
+                    alert('Microphone access denied or not available');
+                }
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                voiceBtn.style.color = 'var(--text-dim)';
+                voiceBtn.classList.remove('pulse');
+            }
+        });
+
+        // Add CSS for pulse
+        const style = document.createElement('style');
+        style.innerHTML = `
+            @keyframes pulse-red {
+                0% { transform: translateY(-50%) scale(1); opacity: 1; }
+                50% { transform: translateY(-50%) scale(1.2); opacity: 0.7; }
+                100% { transform: translateY(-50%) scale(1); opacity: 1; }
+            }
+            .pulse { animation: pulse-red 1.5s infinite ease-in-out; }
+        `;
+        document.head.appendChild(style);
     </script>
 </body>
 

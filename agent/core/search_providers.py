@@ -35,6 +35,7 @@ class TavilySearch:
                         "max_results": max_results,
                         "include_answer": True,
                         "include_raw_content": True,
+                        "include_images": True, # Always request images if available
                         "search_depth": search_depth
                     }
                 )
@@ -53,12 +54,12 @@ class TavilySearch:
                         })
                     
                     # Add search results
-                    for result in data.get("results", []):
                         results.append({
                             "title": result.get("title", ""),
                             "content": result.get("content", ""),
                             "url": result.get("url", ""),
-                            "score": result.get("score", 0.5)
+                            "score": result.get("score", 0.5),
+                            "images": result.get("images", []) # List of image URLs
                         })
                     
                     return results
@@ -324,7 +325,8 @@ class UnifiedSearchProvider:
             "sources": sources_used,
             "timestamp": datetime.now().isoformat(),
             "total_found": len(all_results),
-            "cached": False
+            "cached": False,
+            "images": [img for r in unique_results if r.get("images") for img in r["images"]] # Collect all images
         }
         
         # 3. Save to Durable Cache

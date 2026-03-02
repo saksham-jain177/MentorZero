@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 from concurrent.futures import ThreadPoolExecutor
 import psutil  # type: ignore[import-untyped]
 import json
+from datetime import datetime
 
 
 class ExecutionMode(Enum):
@@ -257,11 +258,17 @@ class AgentOrchestrator:
             if not method:
                 raise ValueError(f"Agent {task.agent_name} has no method {task.task_type}")
             
-            # Execute with timeout
-            result = await asyncio.wait_for(
-                method(task.input_data),
-                timeout=task.max_duration
-            )
+            # Execute with timeout and handle dict unpacking for complex inputs
+            if isinstance(task.input_data, dict):
+                result = await asyncio.wait_for(
+                    method(**task.input_data),
+                    timeout=task.max_duration
+                )
+            else:
+                result = await asyncio.wait_for(
+                    method(task.input_data),
+                    timeout=task.max_duration
+                )
             
             duration = time.time() - start_time
             print(f"[DONE] Completed: {task.agent_name}.{task.task_type} ({duration:.2f}s)")
@@ -348,4 +355,44 @@ class AgentOrchestrator:
         return plan
 
 
-        return plan
+class SearchAgent:
+    """Specialized agent for web searching"""
+    
+    def __init__(self, llm_client=None):
+        from agent.core.research_agent import WebSearchTool
+        self.web_search = WebSearchTool()
+        self.llm = llm_client
+    
+    async def web_search(self, query: str) -> List[Dict]:
+        """Perform a web search"""
+        return await self.web_search.search(query)
+
+
+class WritingAgent:
+    """Specialized agent for content generation and summarization"""
+    
+    def __init__(self, llm_client=None):
+        self.llm = llm_client
+    
+    async def summarize(self, content: Any) -> str:
+        """Summarize research findings"""
+        if not self.llm:
+            return f"Summary of {len(str(content))} bytes: [LLM Required]"
+            
+        prompt = f"Summarize the following research data into a clear, concise report:\n\n{content}"
+        return await self.llm.send_prompt(prompt)
+
+
+class OptimizationAgent:
+    """Specialized agent for query and research optimization"""
+    
+    def __init__(self, llm_client=None):
+        self.llm = llm_client
+    
+    async def optimize(self, query: str) -> str:
+        """Optimize a research query"""
+        if not self.llm:
+            return query
+            
+        prompt = f"Optimize this research query for better web search results: '{query}'. Return only the optimized query."
+        return await self.llm.send_prompt(prompt)

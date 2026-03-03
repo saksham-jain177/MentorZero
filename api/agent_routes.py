@@ -37,7 +37,7 @@ from agent.core.orchestrator import (  # type: ignore[import-untyped]
     WritingAgent,
     OptimizationAgent
 )
-from agent.core.research_agent import ResearchAgent  # type: ignore[import-untyped]
+from agent.core.research_agent import ResearchAgent, ResearchMode  # type: ignore[import-untyped]
 from agent.core.capabilities import (  # type: ignore[import-untyped]
     CodeGenerationAgent,
     LearningAgent,
@@ -72,8 +72,11 @@ async def initialize_agents():
 class ResearchRequest(BaseModel):
     query: str
     mode: str = "adaptive"  # adaptive, parallel, sequential
+    research_mode: str = "general" # general, academic, market, technical
     depth: str = "standard"  # quick, standard, deep
     include_sources: bool = True
+    seed_documents: Optional[List[str]] = None
+    vision_enabled: bool = False
     max_agents: Optional[int] = None
     
     if TYPE_CHECKING:
@@ -196,10 +199,25 @@ async def research_topic(request: ResearchRequest):
         ))
         
         if request.depth in ["standard", "deep"]:
+            # Map research mode string to enum
+            research_mode_map = {
+                "general": ResearchMode.GENERAL,
+                "academic": ResearchMode.ACADEMIC,
+                "market": ResearchMode.MARKET,
+                "technical": ResearchMode.TECHNICAL
+            }
+            res_mode = research_mode_map.get((request.research_mode or "general").lower(), ResearchMode.GENERAL)
+            
             tasks.append(AgentTask(
                 agent_name="research",
                 task_type="research_topic",
-                input_data=optimized_query,
+                input_data={
+                    "query": optimized_query,
+                    "mode": res_mode,
+                    "depth": request.depth,
+                    "seed_documents": request.seed_documents,
+                    "vision_enabled": request.vision_enabled
+                },
                 priority=8
             ))
         
@@ -399,6 +417,8 @@ async def research_websocket(websocket: WebSocket):
             data = await websocket.receive_json()
             query = data.get("query", "")
             mode = data.get("mode", "adaptive")
+            research_mode = data.get("research_mode", "general")
+            depth = data.get("depth", "standard")
             force_refresh = data.get("force_refresh", False)
             seed_files = data.get("seed_files", []) # List of local paths
             vision_enabled = data.get("vision_enabled", False)
@@ -481,14 +501,25 @@ async def research_websocket(websocket: WebSocket):
                 optimized_query = opt_results[0].output
                 await on_complete(opt_results[0])
             
+            # Map research mode string to enum
+            research_mode_map = {
+                "general": ResearchMode.GENERAL,
+                "academic": ResearchMode.ACADEMIC,
+                "market": ResearchMode.MARKET,
+                "technical": ResearchMode.TECHNICAL
+            }
+            res_mode = research_mode_map.get((research_mode or "general").lower(), ResearchMode.GENERAL)
+
             # Step 2: Define and execute secondary tasks with optimized query
             tasks = [
                 AgentTask("search", "web_search", optimized_query, priority=8),
-                AgentTask("research", "research_topic", optimized_query, priority=7, input_data={
+                AgentTask("research", "research_topic", input_data={
                     "query": optimized_query, 
+                    "mode": res_mode,
+                    "depth": depth,
                     "seed_documents": seed_files,
                     "vision_enabled": vision_enabled
-                }),
+                }, priority=7),
                 AgentTask("writer", "summarize", f"Research for {optimized_query}", priority=5, requires=["web_search"])
             ]
             

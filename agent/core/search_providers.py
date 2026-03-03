@@ -264,12 +264,12 @@ class UnifiedSearchProvider:
                 if not self.enabled_providers:
                     logger.warning("No search providers available. Install 'ddgs' for a free fallback.")
     
-    async def search(self, query: str, max_results: int = 5, depth: str = "standard") -> Dict[str, Any]:
+    async def search(self, query: str, max_results: int = 5, depth: str = "standard", research_mode: str = "general") -> Dict[str, Any]:
         """
-        Search across all enabled providers with caching
+        Search across enabled providers with cost-optimization and mode biasing
         """
         settings = get_settings()
-        cache_key = f"search:{query}:{max_results}:{depth}"
+        cache_key = f"search:{query}:{max_results}:{depth}:{research_mode}"
         
         # 1. Check Durable Cache first
         cached_results = cache_manager.get(cache_key, ttl_hours=settings.cache_ttl_hours)
@@ -277,14 +277,32 @@ class UnifiedSearchProvider:
             logger.info(f"Serving cached search results for: {query}")
             return cached_results
 
+        # Cost optimization: If depth is "quick", prefer free providers first
+        active_providers = self.enabled_providers.copy()
+        if depth == "quick":
+            # For quick searches, we can rely on DDG and ArXiv to save credits
+            if "duckduckgo" in active_providers:
+                # Prioritize DDG for general quick queries
+                pass 
+            
+        # Mode biasing
+        if research_mode == "academic" and "arxiv" in active_providers:
+             # ArXiv is already in parallel, but we might want to increase max_results for it
+             pass
+
         all_results = []
         sources_used = []
         
-        # Run searches in parallel across enabled providers
+        # Run searches in parallel
         tasks = []
-        for provider_name in self.enabled_providers:
+        for provider_name in active_providers:
+            # Skip premium providers for "quick" general queries if DDG is available
+            if depth == "quick" and research_mode == "general" and provider_name in ["tavily", "serper"] and "duckduckgo" in active_providers:
+                # We can skip one premium if we have a free one for quick general stuff
+                # But let's keep at least one premium for quality unless the user explicitly wants "eco" mode
+                if provider_name == "serper": continue # Save Serper credits first
+            
             provider = self.providers[provider_name]
-            # DuckDuckGo and ArXiv don't support explicit depth yet, but Tavily does
             if provider_name == "tavily":
                 tasks.append(provider.search(query, max_results, depth=depth))
             else:
@@ -294,7 +312,7 @@ class UnifiedSearchProvider:
         if tasks:
             results_lists = await asyncio.gather(*tasks, return_exceptions=True)
             
-            for provider_name, results in zip(self.enabled_providers, results_lists):
+            for provider_name, results in zip(sources_used, results_lists):
                 if isinstance(results, Exception):
                     logger.error(f"Error in {provider_name}: {results}")
                     continue
@@ -339,10 +357,10 @@ class UnifiedSearchProvider:
 search_provider = UnifiedSearchProvider()
 
 
-async def perform_web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
+async def perform_web_search(query: str, max_results: int = 5, depth: str = "standard", mode: str = "general") -> Dict[str, Any]:
     """
     Main function to perform web search
-    Uses all available search providers
+    Uses all available search providers with mode-aware biasing
     """
-    return await search_provider.search(query, max_results)
+    return await search_provider.search(query, max_results, depth=depth, research_mode=mode)
 

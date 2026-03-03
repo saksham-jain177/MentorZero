@@ -800,6 +800,20 @@
                     <span class="slider"></span>
                     <span class="label" style="font-size: 0.8rem;">Vision Analysis (OCR/Charts)</span>
                 </label>
+
+                <!-- Research Mode Selector (Stage 18) -->
+                <div class="research-mode-selector"
+                    style="display: flex; gap: 0.5rem; align-items: center; background: var(--glass); padding: 0.4rem 0.8rem; border-radius: 10px; border: 1px solid var(--glass-border);">
+                    <i data-lucide="layers" style="width: 14px; height: 14px; color: var(--accent);"></i>
+                    <span style="font-size: 0.8rem; color: var(--text-dim); margin-right: 0.5rem;">Mode:</span>
+                    <select id="research-mode-select"
+                        style="background: none; border: none; color: var(--text); font-size: 0.8rem; cursor: pointer; outline: none; font-weight: 600;">
+                        <option value="general" style="background: var(--bg); color: var(--text);">General</option>
+                        <option value="academic" style="background: var(--bg); color: var(--text);">Academic</option>
+                        <option value="market" style="background: var(--bg); color: var(--text);">Market</option>
+                        <option value="technical" style="background: var(--bg); color: var(--text);">Technical</option>
+                    </select>
+                </div>
             </div>
 
             <div class="mode-toggle">
@@ -977,6 +991,7 @@
                 const data = {
                     query: query,
                     mode: mode,
+                    research_mode: document.getElementById('research-mode-select').value,
                     force_refresh: document.getElementById('force-refresh')?.checked || false,
                     seed_files: uploadedFilePaths,
                     vision_enabled: document.getElementById('vision-toggle').checked

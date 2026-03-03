@@ -21,6 +21,14 @@ from agent.core.pdf_parser import PDFParser
 from agent.db.graph_store import GraphStore
 from agent.core.vector_store import VectorStore
 
+from enum import Enum
+
+class ResearchMode(Enum):
+    GENERAL = "general"
+    ACADEMIC = "academic"
+    MARKET = "market"
+    TECHNICAL = "technical"
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,14 +51,14 @@ class WebSearchTool:
         from agent.core.search_providers import perform_web_search  # type: ignore[import-untyped]
         self.perform_search = perform_web_search
     
-    async def search(self, query: str, max_results: int = 5, depth: str = "standard") -> List[Dict]:
+    async def search(self, query: str, max_results: int = 5, depth: str = "standard", mode: str = "general") -> List[Dict]:
         """
         Search the web for current information
         Uses Tavily, Serper, ArXiv, or DuckDuckGo based on what's configured
         """
         try:
-            # Use the real search provider with depth support
-            search_results = await self.perform_search(query, max_results=max_results)
+            # Use the real search provider with depth and mode support
+            search_results = await self.perform_search(query, max_results=max_results, depth=depth, mode=mode)
             
             # Format results for the research agent
             formatted_results = []
@@ -251,7 +259,8 @@ class ResearchAgent:
         query: str, 
         depth: str = "standard",
         seed_documents: Optional[List[str]] = None,
-        vision_enabled: bool = False
+        vision_enabled: bool = False,
+        mode: ResearchMode = ResearchMode.GENERAL
     ) -> ResearchResult:
         """
         Actively research a topic using multiple sources
@@ -290,12 +299,26 @@ class ResearchAgent:
 
         # 2. SEMANTIC REUSE & CROSS-SESSION KNOWLEDGE
         # Check if we already have a direct or high-similarity match for this query
-        semantic_threshold = get_settings().semantic_cache_threshold
-        past_knowledge = self.vector_store.query_related_knowledge(query, n_results=10)
+        past_knowledge = self.vector_store.search(query, k=10)
         
+        # --- Stage 18: GraphRAG Grounding ---
+        grounding_context = ""
+        if self.graph_store:
+            try:
+                # Search for related entities in the graph store
+                existing_entities = self.graph_store.search_entities(query)
+                if existing_entities:
+                    entity_names = [e.get("name") for e in existing_entities[:5]]
+                    grounding_context = f"Known context from local graph: {', '.join(entity_names)}. "
+                    logger.info(f"GraphRAG grounding: Found {len(entity_names)} related entities.")
+            except Exception as e:
+                logger.error(f"GraphRAG grounding error: {e}")
+
         # Determine if we can skip/optimize based on current knowledge
         has_deep_knowledge = len(past_knowledge) > 5
-        context_summary = "\n".join([f"- {k}" for k in past_knowledge]) if past_knowledge else "None."
+        context_summary = "\n".join([f"- {k.text}" for k in past_knowledge]) if past_knowledge else "None."
+        if grounding_context:
+            context_summary = grounding_context + "\n" + context_summary
         
         logger.info(f"Retrieved {len(past_knowledge)} related facts. Knowledge sufficient: {has_deep_knowledge}")
         
@@ -307,11 +330,11 @@ class ResearchAgent:
             niche = settings.niche_focus
             
             # Generate expert personas for 360-degree coverage
-            personas = await self._generate_personas(query, niche)
+            personas = await self._generate_personas(query, niche, mode=mode)
             logger.info(f"Generated expert personas: {personas}")
             
             # Optimization: If we have past knowledge, ask personas to focus on GAPS
-            persona_tasks = [self._expand_query_as_persona(query, p, context=context_summary if has_deep_knowledge else None) for p in personas]
+            persona_tasks = [self._expand_query_as_persona(query, p, context=context_summary if context_summary != "None." else None) for p in personas]
             expanded_lists = await asyncio.gather(*persona_tasks)
             for sub_list in expanded_lists:
                 search_queries.extend(sub_list)
@@ -322,7 +345,7 @@ class ResearchAgent:
         
         # Search from multiple angles in parallel! (Major Optimization)
         num_queries = 2 if depth == "quick" else 4 if depth == "standard" else 6
-        search_tasks = [self.web_search.search(q, depth=depth) for q in search_queries[:num_queries]]
+        search_tasks = [self.web_search.search(q, depth=depth, mode=mode.value) for q in search_queries[:num_queries]]
         
         results_lists = await asyncio.gather(*search_tasks)
         all_sources = []
@@ -443,13 +466,21 @@ class ResearchAgent:
         except Exception as e:
             logger.error(f"Failed to persist knowledge: {e}")
     
-    async def _expand_query(self, query: str, niche: str = "") -> List[str]:
-        """Use LLM to generate related search queries with optional niche biasing"""
+    async def _expand_query(self, query: str, niche: str = "", mode: ResearchMode = ResearchMode.GENERAL) -> List[str]:
+        """Use LLM to generate related search queries with optional mode biasing"""
         if not self.llm:
             return []
         
+        mode_bias = {
+            ResearchMode.ACADEMIC: "Focus on peer-reviewed journals, ArXiv, and academic research papers.",
+            ResearchMode.MARKET: "Focus on industry trends, market analysis, financial reports, and competitor news.",
+            ResearchMode.TECHNICAL: "Focus on technical documentation, GitHub repositories, API specs, and engineering blogs.",
+            ResearchMode.GENERAL: ""
+        }
+        
         niche_clause = f" specifically within the niche of {niche}" if niche else ""
         prompt = f"""Given the research topic: "{query}"{niche_clause}
+        {mode_bias.get(mode, "")}
         Generate 3 related search queries that would help gather comprehensive information.
         Return only the queries, one per line."""
         
@@ -489,15 +520,22 @@ List the top 3 missing pieces of information."""
         except:
             return await self.research_topic(user_query)
     
-    async def _generate_personas(self, query: str, niche: str = "") -> List[str]:
-        """Generate 2-3 expert personas to look at the topic from different angles with memoization"""
-        cache_key = f"personas:{query}:{niche}"
+    async def _generate_personas(self, query: str, niche: str = "", mode: ResearchMode = ResearchMode.GENERAL) -> List[str]:
+        """Generate 2-3 expert personas with mode-aware context"""
+        cache_key = f"personas:{query}:{niche}:{mode.value}"
         cached = cache_manager.get(cache_key, ttl_hours=24 * 7) # 1 week TTL for personas
         if cached:
             logger.info(f"Using memoized personas for: {query}")
             return cached
 
-        prompt = f"Given the research topic '{query}'{f' in the {niche} field' if niche else ''}, name 3 distinct expert personas who would have unique perspectives on this (e.g. 'Security Auditor', 'Market Analyst', 'History Professor'). Return as a simple comma-separated list."
+        mode_prompts = {
+            ResearchMode.ACADEMIC: "academic researchers and peer reviewers focused on methodology",
+            ResearchMode.MARKET: "market analysts and industry strategists",
+            ResearchMode.TECHNICAL: "technical architects and senior engineers",
+            ResearchMode.GENERAL: "diverse group of experts"
+        }
+
+        prompt = f"Given the research topic '{query}'{f' in the {niche} field' if niche else ''}, name 3 distinct expert personas (e.g. 'Security Auditor', 'Market Analyst') who would have unique perspectives. These should be {mode_prompts.get(mode, 'experts')}. Return as a simple comma-separated list."
         try:
             res = await self.llm.send_prompt(prompt)
             personas = [p.strip() for p in res.split(",")][:3]

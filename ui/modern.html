@@ -932,6 +932,7 @@
     <script>
         // API base URL
         const API_BASE = 'http://localhost:8000/api/v2';
+        const API_KEY = 'mz-default-dev-key'; // Default dev key
 
         // Agent activation animation
         function activateAgent(agentId) {
@@ -982,8 +983,8 @@
             // Reset progress bar
             document.getElementById('progress').style.width = '0%';
 
-            // Use WebSocket for real-time updates
-            const wsUrl = `ws://${window.location.host}/api/v2/ws/research`;
+            // Use WebSocket for real-time updates - PASS API KEY
+            const wsUrl = `ws://${window.location.host}/api/v2/ws/research?api_key=${API_KEY}`;
             const ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
@@ -1140,7 +1141,9 @@
 
         async function loadHistory() {
             try {
-                const response = await fetch('/api/v2/research/history');
+                const response = await fetch('/api/v2/research/history', {
+                    headers: { 'X-API-Key': API_KEY }
+                });
                 const history = await response.json();
 
                 if (history.length === 0) {
@@ -1175,7 +1178,9 @@
             document.getElementById('results').innerHTML = '';
 
             try {
-                const response = await fetch(`/api/v2/research/session/${sessionId}`);
+                const response = await fetch(`/api/v2/research/session/${sessionId}`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
                 const data = await response.json();
                 displayResults(data);
 
@@ -1203,7 +1208,9 @@
                 lucide.createIcons();
 
                 try {
-                    const response = await fetch(`/api/v2/research/export/${currentSessionId}`);
+                    const response = await fetch(`/api/v2/research/export/${currentSessionId}`, {
+                        headers: { 'X-API-Key': API_KEY }
+                    });
                     const data = await response.json();
                     alert(`Report exported successfully to: ${data.path}`);
                 } catch (err) {
@@ -1308,7 +1315,9 @@
         // Fetch real system stats periodically
         async function fetchSystemStats() {
             try {
-                const response = await fetch(`${window.location.protocol}//${window.location.host}/api/v2/system/stats`);
+                const response = await fetch(`${window.location.protocol}//${window.location.host}/api/v2/system/stats`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
                 if (response.ok) {
                     const stats = await response.json();
                     updateSystemStats(stats);
@@ -1421,7 +1430,9 @@
 
         async function loadGraph() {
             try {
-                const response = await fetch(`${API_BASE}/graph`);
+                const response = await fetch(`${API_BASE}/graph`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
                 if (response.ok) {
                     const data = await response.json();
                     if (data.nodes.length > 0) {
@@ -1495,6 +1506,7 @@
 
                 const response = await fetch(`${API_BASE}/research/upload`, {
                     method: 'POST',
+                    headers: { 'X-API-Key': API_KEY },
                     body: formData
                 });
 
@@ -1559,6 +1571,7 @@
                         try {
                             const response = await fetch(`${API_BASE}/research/voice`, {
                                 method: 'POST',
+                                headers: { 'X-API-Key': API_KEY },
                                 body: formData
                             });
                             const data = await response.json();

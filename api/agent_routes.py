@@ -2,7 +2,7 @@
 New Agent-based API Routes
 Handles multi-agent orchestration and research workflows
 """
-from fastapi import APIRouter, HTTPException, BackgroundTasks, WebSocket, File, UploadFile, WebSocketDisconnect # type: ignore[import-untyped]
+from fastapi import APIRouter, HTTPException, BackgroundTasks, WebSocket, File, UploadFile, WebSocketDisconnect, Depends # type: ignore[import-untyped]
 from pydantic import BaseModel  # type: ignore[import-untyped]
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from enum import Enum
@@ -19,13 +19,61 @@ from datetime import datetime
 class SecurityManager:
     @staticmethod
     def sanitize_query(query: str, max_length: int = 500) -> str:
-        """Sanitize user input to prevent prompt injection and DoS"""
+        """Sanitize user input to prevent prompt injection, XSS, and SQLi"""
+        if not query:
+            return ""
+            
         # Trim length
         sanitized = query[:max_length]
-        # Remove common injection markers and system command attempts
+        
+        # 1. Remove common prompt injection markers
         sanitized = re.sub(r'(system:|you are|ignore all|as a|persona:|role:|instruction:)', '', sanitized, flags=re.IGNORECASE)
+        
+        # 2. XSS Guards: Basic removal of script tags and event handlers
+        sanitized = re.sub(r'<script.*?>.*?</script>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
+        sanitized = re.sub(r'on\w+\s*=', '', sanitized, flags=re.IGNORECASE)
+        sanitized = sanitized.replace('<', '&lt;').replace('>', '&gt;')
+        
+        # 3. SQLi Guards: Remove common markers (while allowing natural language)
+        sql_keywords = r'(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER)\s+(FROM|INTO|TABLE|WHERE|JOIN)'
+        sanitized = re.sub(sql_keywords, '[SENSITIVE]', sanitized, flags=re.IGNORECASE)
+        sanitized = sanitized.replace("'", "''")  # Escape single quotes
+        
         # Final cleanup of extra whitespace
         return sanitized.strip()
+
+from fastapi import Header, Request
+from agent.config import get_settings
+
+async def verify_api_key(x_api_key: str = Header(...)):
+    """FastAPI dependency to verify X-API-Key"""
+    settings = get_settings()
+    if x_api_key != settings.api_key:
+        raise HTTPException(status_code=403, detail="Invalid API Key")
+    return x_api_key
+
+class RateLimiter:
+    """Simple in-memory rate limiter per IP"""
+    def __init__(self):
+        self.requests = {}  # {ip: [timestamps]}
+        
+    async def __call__(self, request: Request):
+        settings = get_settings()
+        ip = request.client.host
+        now = time.time()
+        
+        # Cleanup old timestamps
+        if ip in self.requests:
+            self.requests[ip] = [t for t in self.requests[ip] if now - t < 60]
+            
+            if len(self.requests[ip]) >= settings.rate_limit_requests:
+                raise HTTPException(status_code=429, detail="Too many requests. Please wait a minute.")
+            
+            self.requests[ip].append(now)
+        else:
+            self.requests[ip] = [now]
+
+rate_limiter = RateLimiter()
 from datetime import datetime
 
 from agent.core.orchestrator import (  # type: ignore[import-untyped]
@@ -104,17 +152,28 @@ class AgentStatus(BaseModel):
     if TYPE_CHECKING:
         def __init__(self, **kwargs: Any) -> None: ...
 
-@router.post("/research/upload")
+@router.post("/research/upload", dependencies=[Depends(verify_api_key), Depends(rate_limiter)])
 async def upload_seed_document(file: UploadFile = File(...)):
     """Temporarily upload a PDF to be used as a seed document"""
-    if not file.filename.endswith(".pdf"):
+    settings = get_settings()
+    
+    # 1. Size Validation (Max 10MB)
+    content = await file.read()
+    if len(content) > settings.max_upload_size_mb * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"File too large. Max {settings.max_upload_size_mb}MB allowed.")
+    await file.seek(0)
+
+    # 2. Extension Validation
+    if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
         
     temp_dir = "./data/temp_uploads"
     os.makedirs(temp_dir, exist_ok=True)
     
+    # 3. Path Traversal Guard: Use basename and a fresh UUID
+    original_filename = os.path.basename(file.filename)
     file_id = str(uuid.uuid4())
-    file_path = os.path.join(temp_dir, f"{file_id}_{file.filename}")
+    file_path = os.path.join(temp_dir, f"{file_id}_{original_filename}")
     
     try:
         with open(file_path, "wb") as buffer:
@@ -124,14 +183,24 @@ async def upload_seed_document(file: UploadFile = File(...)):
         logger.error(f"Failed to upload file: {e}")
         raise HTTPException(status_code=500, detail="Failed to save file")
 
-@router.post("/research/voice")
+@router.post("/research/voice", dependencies=[Depends(verify_api_key), Depends(rate_limiter)])
 async def transcribe_voice(file: UploadFile = File(...)):
     """Transcribe voice recording using Whisper"""
+    settings = get_settings()
+    
+    # 1. Size Validation (Max 10MB)
+    content = await file.read()
+    if len(content) > settings.max_upload_size_mb * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Voice file too large.")
+    await file.seek(0)
+
     temp_dir = "./data/temp_voice"
     os.makedirs(temp_dir, exist_ok=True)
     
+    # 2. Path Traversal Guard
+    original_filename = os.path.basename(file.filename)
     file_id = str(uuid.uuid4())
-    file_path = os.path.join(temp_dir, f"{file_id}_{file.filename}")
+    file_path = os.path.join(temp_dir, f"{file_id}_{original_filename}")
     
     try:
         with open(file_path, "wb") as buffer:
@@ -153,7 +222,7 @@ async def transcribe_voice(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail="Transcription failed")
 
 # API Endpoints
-@router.post("/research", response_model=ResearchResponse)
+@router.post("/research", response_model=ResearchResponse, dependencies=[Depends(verify_api_key), Depends(rate_limiter)])
 async def research_topic(request: ResearchRequest):
     """
     Execute a multi-agent research workflow
@@ -282,7 +351,7 @@ async def research_topic(request: ResearchRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/agents/status", response_model=List[AgentStatus])
+@router.get("/agents/status", response_model=List[AgentStatus], dependencies=[Depends(verify_api_key)])
 async def get_agents_status():
     """
     Get status of all registered agents
@@ -297,14 +366,14 @@ async def get_agents_status():
         ))
     return statuses
 
-@router.get("/system/stats")
+@router.get("/system/stats", dependencies=[Depends(verify_api_key)])
 async def get_system_stats():
     """
     Get current system resource statistics
     """
     return orchestrator.resource_monitor.get_system_stats()
 
-@router.get("/graph", response_model=Dict[str, Any])
+@router.get("/graph", response_model=Dict[str, Any], dependencies=[Depends(verify_api_key)])
 async def get_graph():
     """Get the full knowledge graph from the research agent"""
     research_agent = orchestrator.agents.get("research")
@@ -313,7 +382,7 @@ async def get_graph():
     
     return research_agent.graph_store.get_full_graph()
 
-@router.get("/graph/search", response_model=Dict[str, Any])
+@router.get("/graph/search", response_model=Dict[str, Any], dependencies=[Depends(verify_api_key)])
 async def search_graph(query: str):
     """Search for a specific entity and its relationships in the graph"""
     research_agent = orchestrator.agents.get("research")
@@ -322,7 +391,7 @@ async def search_graph(query: str):
     
     return research_agent.graph_store.search_subgraph(query)
 
-@router.get("/research/history")
+@router.get("/research/history", dependencies=[Depends(verify_api_key)])
 async def get_research_history(limit: int = 10):
     """Retrieve history of research sessions"""
     research_agent = orchestrator.agents.get("research")
@@ -330,7 +399,7 @@ async def get_research_history(limit: int = 10):
         return []
     return research_agent.graph_store.get_research_history(limit)
 
-@router.get("/research/session/{session_id}")
+@router.get("/research/session/{session_id}", dependencies=[Depends(verify_api_key)])
 async def get_session_results(session_id: str):
     """Get full results for a past research session"""
     research_agent = orchestrator.agents.get("research")
@@ -342,7 +411,7 @@ async def get_session_results(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
     return results
 
-@router.get("/research/export/{session_id}")
+@router.get("/research/export/{session_id}", dependencies=[Depends(verify_api_key)])
 async def export_session_report(session_id: str):
     """Export a research session to Markdown"""
     research_agent = orchestrator.agents.get("research")
@@ -359,7 +428,7 @@ async def export_session_report(session_id: str):
         
     return {"message": "Report exported successfully", "path": os.path.basename(filepath)}
 
-@router.post("/execute/custom")
+@router.post("/execute/custom", dependencies=[Depends(verify_api_key), Depends(rate_limiter)])
 async def execute_custom_workflow(tasks: List[Dict[str, Any]]):
     """
     Execute a custom agent workflow
@@ -401,10 +470,17 @@ async def execute_custom_workflow(tasks: List[Dict[str, Any]]):
 
 
 @router.websocket("/ws/research")
-async def research_websocket(websocket: WebSocket):
+async def research_websocket(websocket: WebSocket, api_key: Optional[str] = None):
     """
     WebSocket endpoint for real-time research updates
     """
+    settings = get_settings()
+    if api_key != settings.api_key:
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "message": "Invalid API Key"})
+        await websocket.close(code=4003)
+        return
+
     await websocket.accept()
     
     # State for Delta Updates

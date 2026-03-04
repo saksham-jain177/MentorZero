@@ -259,15 +259,18 @@ class AgentOrchestrator:
                 raise ValueError(f"Agent {task.agent_name} has no method {task.task_type}")
             
             # Execute with timeout and handle dict unpacking for complex inputs
+            settings = get_settings()
+            timeout = task.max_duration if task.max_duration else settings.task_global_timeout
+            
             if isinstance(task.input_data, dict):
                 result = await asyncio.wait_for(
                     method(**task.input_data),
-                    timeout=task.max_duration
+                    timeout=timeout
                 )
             else:
                 result = await asyncio.wait_for(
                     method(task.input_data),
-                    timeout=task.max_duration
+                    timeout=timeout
                 )
             
             duration = time.time() - start_time

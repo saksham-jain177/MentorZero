@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     cache_ttl_hours: int = 24
     semantic_cache_threshold: float = 0.9
     
+    # Security & Hardening
+    api_key: str = "mz-default-dev-key"  # Required for all API requests
+    rate_limit_requests: int = 60         # Max requests per minute
+    max_upload_size_mb: int = 10         # Max PDF/Voice upload size
+    task_global_timeout: float = 300.0   # 5-minute timeout for any single agent task
+    
     # Pydantic v2 configuration
     model_config = SettingsConfigDict(
         env_file=".env",

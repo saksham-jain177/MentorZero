@@ -20,6 +20,7 @@ from typing import Dict, List, Optional, Any, Union
 from agent.core.pdf_parser import PDFParser
 from agent.db.graph_store import GraphStore
 from agent.core.vector_store import VectorStore
+from agent.core.azl_scorer import AZLScorer
 
 from enum import Enum
 
@@ -251,6 +252,7 @@ class ResearchAgent:
         self.graph_builder = KnowledgeGraphBuilder()
         self.graph_store = GraphStore(db_path)
         self.vector_store = VectorStore(vector_db_path)
+        self.azl_scorer = AZLScorer(llm_client)
         self.llm = llm_client
         self.research_cache = {}
     
@@ -428,6 +430,18 @@ class ResearchAgent:
                 # Final re-verify and merge
                 verified_facts = self.fact_verifier.cross_reference(all_sources)
                 unique_facts = await self._semantic_deduplicate([f["fact"] for f in verified_facts[:30]])
+
+        # --- Stage 20: AZL Safety & Grounding Audit ---
+        if self.llm:
+            logger.info("Triggering AZL Safety & Grounding Audit...")
+            validation_report = await self.azl_scorer.validate_result(query, unique_facts, all_sources)
+            if not validation_report.get("passed"):
+                logger.warning(f"AZL Validation Failed: {validation_report.get('metrics', {}).get('critique', 'Unknown reason')}")
+                # If safety is the issue, we might want to flag the entire result
+                if validation_report.get("metrics", {}).get("is_safe") is False:
+                    unique_facts = ["[REDACTED] This research result was flagged for safety violations by the AZL guardrail."]
+                    avg_confidence = 0.0
+        
         
         result = ResearchResult(
             query=query,

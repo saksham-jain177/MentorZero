@@ -15,6 +15,7 @@ import shutil
 import os
 import time
 from datetime import datetime
+from agent.core.llm_client import LLMClient
 
 class SecurityManager:
     @staticmethod
@@ -103,18 +104,21 @@ orchestrator = AgentOrchestrator()
 # Initialize agents on startup
 async def initialize_agents():
     """Initialize all specialized agents"""
+    # Create a shared LLM client
+    llm_client = LLMClient()
+    
     # Research & Information
-    orchestrator.register_agent("search", SearchAgent())
-    orchestrator.register_agent("research", ResearchAgent())
-    orchestrator.register_agent("writer", WritingAgent())
-    orchestrator.register_agent("optimizer", OptimizationAgent())
+    orchestrator.register_agent("search", SearchAgent(llm_client))
+    orchestrator.register_agent("research", ResearchAgent(llm_client))
+    orchestrator.register_agent("writer", WritingAgent(llm_client))
+    orchestrator.register_agent("optimizer", OptimizationAgent(llm_client))
     
     # New Capabilities
-    orchestrator.register_agent("coder", CodeGenerationAgent())
-    orchestrator.register_agent("learner", LearningAgent())
+    orchestrator.register_agent("coder", CodeGenerationAgent(llm_client))
+    orchestrator.register_agent("learner", LearningAgent(llm_client))
     orchestrator.register_agent("analyzer", AnalysisAgent())
     orchestrator.register_agent("automator", AutomationAgent())
-    orchestrator.register_agent("creative", CreativeAgent())
+    orchestrator.register_agent("creative", CreativeAgent(llm_client))
 
 # Request/Response Models
 class ResearchRequest(BaseModel):
@@ -247,7 +251,7 @@ async def research_topic(request: ResearchRequest):
         # Step 1: Optimize the query first to get niche biasing
         optimizer_task = AgentTask(
             agent_name="optimizer",
-            task_type="optimize_query",
+            task_type="optimize",
             input_data=sanitized_query,
             priority=10
         )
@@ -568,7 +572,7 @@ async def research_websocket(websocket: WebSocket, api_key: Optional[str] = None
                         for e in new_edges: sent_edges.add(e["data"]["id"])
             
             # Step 1: Optimize query for niche biasing
-            optimizer_task = AgentTask("optimizer", "optimize_query", sanitized_query, priority=10)
+            optimizer_task = AgentTask("optimizer", "optimize", sanitized_query, priority=10)
             await on_start(optimizer_task)
             
             opt_results = await orchestrator.execute_tasks([optimizer_task])

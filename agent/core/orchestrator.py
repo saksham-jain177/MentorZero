@@ -378,11 +378,19 @@ class WritingAgent:
         self.llm = llm_client
     
     async def summarize(self, content: Any) -> str:
-        """Summarize research findings"""
+        """Summarize research findings with strict citations (Compliance Stage 21)"""
         if not self.llm:
             return f"Summary of {len(str(content))} bytes: [LLM Required]"
             
-        prompt = f"Summarize the following research data into a clear, concise report:\n\n{content}"
+        prompt = f"""Summarize the following research data into a clear, professional report.
+        
+### RULES:
+1. **Strict Citations**: Every factual claim MUST be followed by a citation like [Source URL] or [Document Name].
+2. **Structure**: Use headers, bullet points, and a "Final Conclusion" section.
+3. **No Hallucinations**: Do not add information not present in the provided context.
+
+Research Data:
+{content}"""
         return await self.llm.send_prompt(prompt)
 
 

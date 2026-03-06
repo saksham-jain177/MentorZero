@@ -596,7 +596,11 @@ Return JSON only: {{"is_sufficient": bool, "critique": "string", "gap_query": "s
             
         prompt = f"""These research facts contain redundancies. Consolidate them into a clean, non-repetitive list of the most important unique insights (max 15).
         
-Facts:
+### CRITICAL RULE:
+1. **Preserve Citations**: Every consolidated fact MUST include its original source URL or name (e.g., [source.com]).
+2. **Provenance**: Do not lose the mapping between a fact and its evidence.
+
+Facts to Consolidate:
 {chr(10).join(facts)}
 
 Return only the consolidated list, one item per line."""

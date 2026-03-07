@@ -57,8 +57,20 @@ class VectorStore:
             logger.error(f"Error saving vector store: {e}")
 
     def add_facts(self, facts: List[Dict[str, Any]], session_id: str):
-        """Add verified facts to the vector store"""
-        if not facts or self.model is None:
+        """Add verified facts to the vector store with guards"""
+        if not facts:
+            return
+            
+        if self.model is None:
+            logger.warning("VectorStore: Model not loaded, skipping semantic indexing but saving raw data.")
+            self.data.extend([{
+                "id": f"{session_id}_{len(self.data) + i}",
+                "text": f.get("fact", ""),
+                "session_id": session_id,
+                "sources": f.get("sources", []),
+                "timestamp": str(datetime.now().isoformat())
+            } for i, f in enumerate(facts)])
+            self._save()
             return
 
         new_texts = []
@@ -115,7 +127,9 @@ class VectorStore:
             return results
         except Exception as e:
             logger.error(f"Error querying VectorStore: {e}")
-            return []
+            # Fallback: simple keyword match if semantic search fails
+            keywords = query.lower().split()
+            return [d["text"] for d in self.data[:n_results] if any(k in d["text"].lower() for k in keywords)]
 
     def get_session_memory(self, session_id: str) -> List[str]:
         """Retrieve all facts associated with a specific session"""

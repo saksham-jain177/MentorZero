@@ -2,6 +2,7 @@ import logging
 import json
 import re
 import os
+import hashlib
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from agent.config import get_settings
@@ -106,7 +107,7 @@ Return JSON only:
                 "version": "1.0",
                 "timestamp": datetime.now().isoformat(),
                 "event_type": "azl_validation",
-                "query_hash": str(hash(report.get("query", ""))),
+                "query_hash": hashlib.sha256(report.get("query", "").encode()).hexdigest(),
                 "metrics": report.get("metrics", {}),
                 "passed": report.get("passed", False),
                 "overall_score": report.get("overall_score", 0.0),

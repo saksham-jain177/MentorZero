@@ -139,10 +139,21 @@ class FactVerifier:
             # Boost facts mentioned in multiple sources
             confidence = min(0.4 + (count / total_sources) * 0.6, 1.0) if count > 1 else 0.3
             
+            # Aggregate metadata from sources
+            fact_metadata = []
+            for source in sources:
+                if source.get("url", "") in data["sources"]:
+                    fact_metadata.append({
+                        "url": source.get("url", ""),
+                        "persona": source.get("persona", "Unknown"),
+                        "query": source.get("query", "Unknown")
+                    })
+
             verified_facts.append({
                 "fact": data["text"],
                 "confidence": confidence,
                 "sources": list(data["sources"]),
+                "metadata": fact_metadata,
                 "frequency": count
             })
         
@@ -255,6 +266,8 @@ class ResearchAgent:
         self.azl_scorer = AZLScorer(llm_client)
         self.llm = llm_client
         self.research_cache = {}
+        self.on_steering_event = None  # Hook for HITL (Human-In-The-Loop)
+        self.fact_lineage = []  # Lineage: List[{fact, persona, query, url}]
     
     async def research_topic(
         self, 
@@ -262,7 +275,8 @@ class ResearchAgent:
         depth: str = "standard",
         seed_documents: Optional[List[str]] = None,
         vision_enabled: bool = False,
-        mode: ResearchMode = ResearchMode.GENERAL
+        mode: ResearchMode = ResearchMode.GENERAL,
+        on_steering: Optional[Any] = None
     ) -> ResearchResult:
         """
         Actively research a topic using multiple sources
@@ -272,7 +286,11 @@ class ResearchAgent:
             depth: "quick" | "standard" | "deep"
             seed_documents: List of paths to local PDFs to index first
             vision_enabled: Whether to process images and charts
+            mode: ResearchMode
+            on_steering: Optional callback for HITL
         """
+        self.on_steering_event = on_steering
+        self.fact_lineage = [] # Reset for new session
         # Check cache first
         cache_key = f"{query}:{depth}"
         if cache_key in self.research_cache:
@@ -338,6 +356,22 @@ class ResearchAgent:
             # Optimization: If we have past knowledge, ask personas to focus on GAPS
             persona_tasks = [self._expand_query_as_persona(query, p, context=context_summary if context_summary != "None." else None) for p in personas]
             expanded_lists = await asyncio.gather(*persona_tasks)
+            
+            # --- Stage 23 Decision Point A: Persona & Query Steering ---
+            if self.on_steering_event:
+                steering_data = {
+                    "personas": personas,
+                    "queries": {personas[i]: expanded_lists[i] for i in range(len(personas))}
+                }
+                logger.info("Decision Point A: Waiting for user approval of personas and queries...")
+                user_feedback = await self.on_steering_event("planning_approval", steering_data)
+                
+                # Update based on feedback
+                if user_feedback:
+                    personas = user_feedback.get("personas", personas)
+                    # Re-map queries if personas changed significantly or overrides provided
+                    expanded_lists = [user_feedback["queries"].get(p, []) for p in personas]
+            
             for sub_list in expanded_lists:
                 search_queries.extend(sub_list)
         elif self.llm:
@@ -347,8 +381,21 @@ class ResearchAgent:
         
         # Search from multiple angles in parallel! (Major Optimization)
         num_queries = 2 if depth == "quick" else 4 if depth == "standard" else 6
-        search_tasks = [self.web_search.search(q, depth=depth, mode=mode.value) for q in search_queries[:num_queries]]
         
+        # Tag each search task with persona/query for traceability
+        search_tasks = []
+        for i, persona in enumerate(personas[:num_queries]): # Simplified mapping
+            for q in expanded_lists[i][:2]:
+                # Wrap search in a helper to tag results
+                async def tagged_search(query_str, persona_name):
+                    res = await self.web_search.search(query_str, depth=depth, mode=mode.value)
+                    for item in res:
+                        item["persona"] = persona_name
+                        item["query"] = query_str
+                    return res
+                
+                search_tasks.append(tagged_search(q, persona))
+
         results_lists = await asyncio.gather(*search_tasks)
         all_sources = []
         for r_list in results_lists:
@@ -398,6 +445,18 @@ class ResearchAgent:
         # Persist to Vector Store (Persistent Memory)
         self.vector_store.add_facts(verified_facts, query) # usage of query as session_id for now
         
+        # Populate lineage for traceability
+        self.fact_lineage = []
+        for f in verified_facts:
+            if f["fact"] in unique_facts:
+                for meta in f.get("metadata", []):
+                    self.fact_lineage.append({
+                        "fact": f["fact"],
+                        "url": meta["url"],
+                        "persona": meta["persona"],
+                        "query": meta["query"]
+                    })
+        
         # IMPROVISED: Self-Correction Loop (Gap Analysis)
         # If depth is deep and we have low confidence, try to fill gaps
         if depth == "deep" and avg_confidence < 0.7 and self.llm:
@@ -431,6 +490,14 @@ class ResearchAgent:
                 verified_facts = self.fact_verifier.cross_reference(all_sources)
                 unique_facts = await self._semantic_deduplicate([f["fact"] for f in verified_facts[:30]])
 
+        # --- Stage 23 Decision Point B: Fact Pruning ---
+        if self.on_steering_event:
+            logger.info("Decision Point B: Waiting for user fact pruning...")
+            steering_data = {"facts": unique_facts}
+            user_feedback = await self.on_steering_event("fact_pruning", steering_data)
+            if user_feedback and "facts" in user_feedback:
+                unique_facts = user_feedback["facts"]
+
         # --- Stage 20: AZL Safety & Grounding Audit ---
         if self.llm:
             logger.info("Triggering AZL Safety & Grounding Audit...")
@@ -451,6 +518,10 @@ class ResearchAgent:
             timestamp=datetime.now(),
             knowledge_graph=knowledge_graph
         )
+        
+        # Add lineage to metadata for export
+        if hasattr(result, "knowledge_graph") and result.knowledge_graph:
+             result.knowledge_graph["lineage"] = self.fact_lineage[:50] # Limit to top 50 for UI
         
         # Cache the result
         self.research_cache[cache_key] = result

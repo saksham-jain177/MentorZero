@@ -512,10 +512,21 @@ async def research_websocket(websocket: WebSocket, api_key: Optional[str] = None
     sent_nodes = set()
     sent_edges = set()
     
+    # Steering state (Stage 23)
+    steering_response_event = asyncio.Event()
+    steering_response_data = {}
+    
     try:
         while True:
             # Receive query from client
             data = await websocket.receive_json()
+            
+            # Handle Steering Response first
+            if data.get("type") == "steering_response":
+                steering_response_data = data.get("data", {})
+                steering_response_event.set()
+                continue
+
             query = data.get("query", "")
             mode = data.get("mode", "adaptive")
             research_mode = data.get("research_mode", "general")
@@ -620,6 +631,27 @@ async def research_websocket(websocket: WebSocket, api_key: Optional[str] = None
             }
             res_mode = research_mode_map.get((research_mode or "general").lower(), ResearchMode.GENERAL)
 
+            # Steering state: Event to wait for response, and storage for the response
+            steering_response_event = asyncio.Event()
+            steering_response_data = {}
+
+            async def steering_handler(event_type: str, data: Any):
+                nonlocal steering_response_data
+                await websocket.send_json({
+                    "type": "steering_request",
+                    "event_type": event_type,
+                    "data": data
+                })
+                # Wait for response from the main loop
+                steering_response_event.clear()
+                try:
+                    # Timeout after 2 minutes if user doesn't respond
+                    await asyncio.wait_for(steering_response_event.wait(), timeout=120)
+                    return steering_response_data
+                except asyncio.TimeoutError:
+                    logger.warning(f"Steering timeout for {event_type}. Proceeding with defaults.")
+                    return None
+
             # Step 2: Define and execute secondary tasks with optimized query
             tasks = [
                 AgentTask("search", "web_search", optimized_query, priority=8),
@@ -628,7 +660,8 @@ async def research_websocket(websocket: WebSocket, api_key: Optional[str] = None
                     "mode": res_mode,
                     "depth": depth,
                     "seed_documents": seed_files,
-                    "vision_enabled": vision_enabled
+                    "vision_enabled": vision_enabled,
+                    "on_steering": steering_handler # Inject the steering handler
                 }, priority=7),
                 AgentTask("writer", "summarize", f"Research for {optimized_query}", priority=5, requires=["web_search"])
             ]

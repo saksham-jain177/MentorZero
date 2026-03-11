@@ -704,6 +704,174 @@
                 margin-top: 2rem;
             }
         }
+
+        /* Steering Dashboard (Stage 23) */
+        #steering-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(8px);
+            z-index: 2000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        #steering-overlay.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        .steering-card {
+            background: var(--dark-lighter);
+            border: 1px solid var(--primary);
+            border-radius: 24px;
+            padding: 2.5rem;
+            max-width: 600px;
+            width: 90%;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            animation: slideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .steering-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .steering-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .steering-item {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .steering-item:hover {
+            border-color: var(--primary);
+        }
+
+        .lineage-tree {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(15, 23, 42, 0.4);
+            border-radius: 12px;
+            border-left: 3px solid var(--accent);
+            font-size: 0.85rem;
+            display: none;
+        }
+
+        .lineage-tree.active {
+            display: block;
+        }
+
+        .lineage-node {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+            color: var(--text-dim);
+        }
+
+        .lineage-node strong {
+            color: var(--text);
+        }
+
+        /* Steering Dashboard (Stage 23) */
+        #steering-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(8px);
+            z-index: 2000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        #steering-overlay.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        .steering-card {
+            background: var(--dark-lighter);
+            border: 1px solid var(--primary);
+            border-radius: 24px;
+            padding: 2.5rem;
+            max-width: 600px;
+            width: 90%;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            animation: slideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .steering-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .steering-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .steering-item {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .steering-item:hover {
+            border-color: var(--primary);
+        }
+
+        .lineage-tree {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(15, 23, 42, 0.4);
+            border-radius: 12px;
+            border-left: 3px solid var(--accent);
+            font-size: 0.85rem;
+            display: none;
+        }
+
+        .lineage-tree.active {
+            display: block;
+        }
+
+        .lineage-node {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+            color: var(--text-dim);
+        }
+
+        .lineage-node strong {
+            color: var(--text);
+        }
     </style>
 </head>
 
@@ -894,6 +1062,27 @@
         <div class="results-section" id="results"></div>
     </div>
 
+    <!-- Steering Overlay (Stage 23) -->
+    <div id="steering-overlay">
+        <div class="steering-card">
+            <div class="steering-header">
+                <i data-lucide="navigation" style="width: 32px; height: 32px; color: var(--primary);"></i>
+                <div class="steering-title" id="steering-title">Research Steering</div>
+            </div>
+            <p id="steering-description" style="color: var(--text-dim); margin-bottom: 1.5rem;">The AI needs your input
+                to continue.</p>
+
+            <div id="steering-content" style="max-height: 400px; overflow-y: auto; margin-bottom: 2rem;">
+                <!-- Dynamic steering options -->
+            </div>
+
+            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                <button class="btn btn-secondary" id="steering-cancel">Skip/Defaults</button>
+                <button class="btn btn-primary" id="steering-submit">Continue Research</button>
+            </div>
+        </div>
+    </div>
+
     <!-- System Stats -->
     <div class="system-stats collapsed" id="system-stats">
         <div class="floating-icon">
@@ -1073,6 +1262,14 @@
 
                     document.getElementById('progress').style.width = '100%';
                     ws.close();
+                } else if (data.type === 'steering_request') {
+                    showSteeringOverlay(data.prompt, data.data, (response) => {
+                        ws.send(JSON.stringify({
+                            type: 'steering_response',
+                            step_id: data.step_id,
+                            response: response
+                        }));
+                    });
                 } else if (data.type === 'error') {
                     addResult('error', data.message);
                     ws.close();
@@ -1193,61 +1390,161 @@
             }
         }
 
-        // Handle Export
-        document.addEventListener('click', async (e) => {
-            if (e.target.closest('#export-btn')) {
-                const btn = e.target.closest('#export-btn');
-                const originalContent = btn.innerHTML;
+        // Steering Logic (Stage 23)
+        let steeringCallback = null;
 
-                if (!currentSessionId) {
-                    alert("Please select a session from history or complete a new research first.");
-                    return;
-                }
+        function showSteeringOverlay(prompt, data, callback) {
+            steeringCallback = callback;
+            const overlay = document.getElementById('steering-overlay');
+            const title = document.getElementById('steering-title');
+            const description = document.getElementById('steering-description');
+            const content = document.getElementById('steering-content');
 
-                btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Exporting...';
-                lucide.createIcons();
+            title.textContent = prompt || 'Research Steering';
+            description.textContent = 'The Research Agent is seeking your guidance.';
+            content.innerHTML = '';
 
-                try {
-                    const response = await fetch(`/api/v2/research/export/${currentSessionId}`, {
-                        headers: { 'X-API-Key': API_KEY }
-                    });
-                    const data = await response.json();
-                    alert(`Report exported successfully to: ${data.path}`);
-                } catch (err) {
-                    alert("Export failed. Please try again.");
-                } finally {
-                    btn.innerHTML = originalContent;
-                    lucide.createIcons();
-                }
+            // Handle different steering data types
+            if (data && data.personas) {
+                data.personas.forEach((p, idx) => {
+                    const item = document.createElement('div');
+                    item.className = 'steering-item';
+                    item.innerHTML = `
+                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                            <i data-lucide="user" style="width: 16px; height: 16px; color: var(--accent);"></i>
+                            <strong>${p.persona}</strong>
+                        </div>
+                        <input type="text" class="persona-query-input" value="${p.query}" 
+                               style="width: 100%; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 0.5rem; color: var(--text);">
+                    `;
+                    content.appendChild(item);
+                });
+            } else if (data && data.facts) {
+                data.facts.forEach((f, idx) => {
+                    const item = document.createElement('div');
+                    item.className = 'steering-item';
+                    item.style.display = 'flex';
+                    item.style.alignItems = 'flex-start';
+                    item.style.gap = '1rem';
+                    item.innerHTML = `
+                        <input type="checkbox" checked class="fact-check" data-idx="${idx}" style="margin-top: 0.3rem;">
+                        <textarea class="fact-text" style="flex: 1; background: none; border: none; color: var(--text); font-size: 0.9rem; resize: none;">${f.fact}</textarea>
+                    `;
+                    content.appendChild(item);
+                });
             }
+
+            overlay.classList.add('active');
+            lucide.createIcons();
+        }
+
+        document.getElementById('steering-submit').addEventListener('click', () => {
+            if (!steeringCallback) return;
+
+            const content = document.getElementById('steering-content');
+            const personaInputs = content.querySelectorAll('.persona-query-input');
+            const factChecks = content.querySelectorAll('.fact-check');
+
+            let response = {};
+
+            if (personaInputs.length > 0) {
+                response.action = 'approved';
+                // Note: Simplified approval for demo, could capture modified queries too
+            } else if (factChecks.length > 0) {
+                response.action = 'pruned';
+                response.keep_indices = Array.from(factChecks).filter(c => c.checked).map(c => parseInt(c.dataset.idx));
+            } else {
+                response.action = 'approved';
+            }
+
+            document.getElementById('steering-overlay').classList.remove('active');
+            steeringCallback(response);
+            steeringCallback = null;
+        });
+
+        document.getElementById('steering-cancel').addEventListener('click', () => {
+            if (!steeringCallback) return;
+            document.getElementById('steering-overlay').classList.remove('active');
+            steeringCallback({ action: 'approved' }); // Default to approval if skipped
+            steeringCallback = null;
         });
 
         function addDetailedResult(result) {
             const resultsDiv = document.getElementById('results');
-            const resultCard = document.createElement('div');
-            resultCard.className = 'result-card';
+            const card = document.createElement('div');
+            card.className = 'result-card';
 
-            let outputContent = '';
-            if (result.output) {
-                if (typeof result.output === 'object') {
-                    outputContent = `<pre style="white-space: pre-wrap; word-break: break-all;">${JSON.stringify(result.output, null, 2)}</pre>`;
-                } else {
-                    outputContent = result.output;
-                }
-            }
+            const agentIcons = {
+                'search': 'search',
+                'research': 'book-open',
+                'writer': 'pen-tool',
+                'optimizer': 'zap',
+                'verifier': 'check-circle'
+            };
 
-            resultCard.innerHTML = `
+            const icon = agentIcons[result.agent] || 'info';
+
+            card.innerHTML = `
                 <div class="result-header">
                     <div class="result-agent">
-                        <i data-lucide="activity"></i>
-                        <span>${result.agent} - ${result.task}</span>
+                        <i data-lucide="${icon}"></i>
+                        <span style="text-transform: capitalize;">${result.agent} Agent</span>
                     </div>
-                    <div class="result-time">Duration: ${result.duration?.toFixed(2) || 0}s</div>
+                    <div class="result-time">${result.duration?.toFixed(2) || 0}s</div>
                 </div>
-                <div class="result-content">${outputContent}</div>
+                <div class="result-task">${result.task || 'Sub-task execution'}</div>
+                <div class="result-content">${formatOutput(result.output)}</div>
+                ${result.agent === 'research' ? '<div class="lineage-toggle" style="margin-top: 1rem; font-size: 0.8rem; color: var(--primary); cursor: pointer;"><i data-lucide="git-branch" style="width: 14px; height: 14px; vertical-align: middle; margin-right: 0.2rem;"></i> View Traceability Tree</div>' : ''}
+                <div class="lineage-tree"></div>
             `;
-            resultsDiv.appendChild(resultCard);
+
+            resultsDiv.insertBefore(card, resultsDiv.firstChild);
             lucide.createIcons();
+
+            // Handle Traceability Tree (Stage 23)
+            if (result.agent === 'research') {
+                const toggle = card.querySelector('.lineage-toggle');
+                const tree = card.querySelector('.lineage-tree');
+                toggle.addEventListener('click', () => {
+                    tree.classList.toggle('active');
+                    if (tree.classList.contains('active')) {
+                        renderLineage(tree, result.lineage || []);
+                    }
+                });
+            }
+        }
+
+        function renderLineage(container, lineage) {
+            if (!lineage || lineage.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-dim);">No lineage data available for this result.</p>';
+                return;
+            }
+
+            container.innerHTML = '<h5 style="margin-bottom: 0.5rem; color: var(--accent);">Fact Lineage (Provenance)</h5>';
+
+            lineage.slice(0, 5).forEach(item => {
+                const node = document.createElement('div');
+                node.className = 'lineage-node';
+                node.innerHTML = `
+                    <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent);"></div>
+                    <div>
+                        <strong>Fact:</strong> ${item.fact.substring(0, 50)}...<br>
+                        <span style="font-size: 0.75rem;">Source: ${item.source_url}</span><br>
+                        <span style="font-size: 0.75rem; color: var(--primary);">Query: ${item.query} (${item.persona})</span>
+                    </div>
+                `;
+                container.appendChild(node);
+            });
+        }
+
+        function formatOutput(output) {
+            if (typeof output === 'string') return output;
+            if (Array.isArray(output)) {
+                return `<ul style="padding-left: 1.5rem; margin-top: 0.5rem;">
+                    ${output.map(item => `<li>${typeof item === 'object' ? (item.fact || JSON.stringify(item)) : item}</li>`).join('')}
+                </ul>`;
+            }
+            return JSON.stringify(output);
         }
 
         function addResult(agentId, content) {

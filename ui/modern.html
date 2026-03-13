@@ -1538,10 +1538,39 @@
         }
 
         function formatOutput(output) {
-            if (typeof output === 'string') return output;
+            if (typeof output === 'string') {
+                if (output.startsWith('[Visual Insight]')) {
+                    const content = output.replace('[Visual Insight]', '').trim();
+                    return `
+                        <div style="display: flex; gap: 1rem; align-items: flex-start; background: rgba(139, 92, 246, 0.1); border-left: 3px solid var(--accent); padding: 1rem; border-radius: 8px; margin-top: 0.5rem;">
+                            <i data-lucide="eye" style="color: var(--accent); flex-shrink: 0; margin-top: 0.2rem;"></i>
+                            <div style="font-size: 0.9rem;">
+                                <strong style="color: var(--accent); display: block; margin-bottom: 0.25rem;">VISUAL ANALYSIS</strong>
+                                ${content}
+                            </div>
+                        </div>
+                    `;
+                }
+                return output;
+            }
             if (Array.isArray(output)) {
                 return `<ul style="padding-left: 1.5rem; margin-top: 0.5rem;">
-                    ${output.map(item => `<li>${typeof item === 'object' ? (item.fact || JSON.stringify(item)) : item}</li>`).join('')}
+                    ${output.map(item => {
+                        let text = typeof item === 'object' ? (item.fact || JSON.stringify(item)) : item;
+                        if (text.startsWith('[Visual Insight]')) {
+                            const content = text.replace('[Visual Insight]', '').trim();
+                            return `<li style="list-style: none; margin-bottom: 1rem;">
+                                <div style="display: flex; gap: 1rem; align-items: flex-start; background: rgba(139, 92, 246, 0.1); border-left: 3px solid var(--accent); padding: 1rem; border-radius: 8px;">
+                                    <i data-lucide="eye" style="color: var(--accent); flex-shrink: 0; margin-top: 0.2rem;"></i>
+                                    <div style="font-size: 0.9rem;">
+                                        <strong style="color: var(--accent); display: block; margin-bottom: 0.25rem;">VISUAL ANALYSIS</strong>
+                                        ${content}
+                                    </div>
+                                </div>
+                            </li>`;
+                        }
+                        return `<li>${text}</li>`;
+                    }).join('')}
                 </ul>`;
             }
             return JSON.stringify(output);

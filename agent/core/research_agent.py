@@ -404,33 +404,45 @@ class ResearchAgent:
         # Verify and cross-reference facts
         verified_facts = self.fact_verifier.cross_reference(all_sources)
         
-        # 4. VISION ANALYSIS (Stage 17)
+        # 4. VISION ANALYSIS (Stage 17 & 24)
+        vision_facts = []
         if vision_enabled and self.llm:
             logger.info("Vision enabled: Analyzing charts and diagrams from search results...")
-            # Extract image URLs from search results
             image_urls = []
             for r in all_sources:
                 if isinstance(r, dict) and r.get("images"):
-                    image_urls.extend(r["images"])
+                    imgs = r["images"]
+                    if isinstance(imgs, list):
+                        image_urls.extend(imgs)
+                    else:
+                        image_urls.append(imgs)
             
-            # Limit to top 3 images to save compute
+            # Limit to top 3 images to save compute and prevent rate limits
             for img_url in image_urls[:3]:
+                if not img_url or not isinstance(img_url, str) or not img_url.startswith('http'):
+                    continue
                 logger.info(f"Analyzing image: {img_url}")
-                # We need a way to download or proxy the image
-                # For now, we'll try to fetch it if it's a URL
                 try:
                     img_path = await self._download_temp_image(img_url)
                     if img_path:
                         vision_insight = await self._analyze_vision(img_path, context=query)
                         if vision_insight:
-                            verified_facts.append({
-                                "fact": f"[Visual Insight] {vision_insight}",
+                            f_text = f"[Visual Insight] {vision_insight}"
+                            vision_facts.append({
+                                "fact": f_text,
                                 "confidence": 0.9,
-                                "sources": [img_url]
+                                "sources": [img_url],
+                                "metadata": [{
+                                    "url": img_url,
+                                    "persona": "Vision Agent",
+                                    "query": f"Visual analysis of {query}"
+                                }]
                             })
                             logger.info(f"Extracted vision insight: {vision_insight[:50]}...")
                 except Exception as ve:
                     logger.warning(f"Failed to analyze image {img_url}: {ve}")
+        
+        verified_facts.extend(vision_facts)
         
         # Build knowledge graph (LLM-aware)
         knowledge_graph = await self.graph_builder.build(verified_facts, query, self.llm)
@@ -445,16 +457,23 @@ class ResearchAgent:
         # Persist to Vector Store (Persistent Memory)
         self.vector_store.add_facts(verified_facts, query) # usage of query as session_id for now
         
+        # IMPROVISED: Semantic Deduplication (concise insights)
+        unique_facts = [f["fact"] for f in verified_facts[:30]]
+        if self.llm and len(unique_facts) > 10:
+             unique_facts = await self._semantic_deduplicate(unique_facts)
+
         # Populate lineage for traceability
         self.fact_lineage = []
-        for f in verified_facts:
-            if f["fact"] in unique_facts:
-                for meta in f.get("metadata", []):
+        for f_text in unique_facts:
+            # Match unique fact back to original metadata
+            original_fact = next((vf for vf in verified_facts if vf["fact"] in f_text or f_text in vf["fact"]), None)
+            if original_fact:
+                for meta in original_fact.get("metadata", []):
                     self.fact_lineage.append({
-                        "fact": f["fact"],
-                        "url": meta["url"],
-                        "persona": meta["persona"],
-                        "query": meta["query"]
+                        "fact": f_text,
+                        "url": meta.get("url", ""),
+                        "persona": meta.get("persona", "Unknown"),
+                        "query": meta.get("query", "Unknown")
                     })
         
         # IMPROVISED: Self-Correction Loop (Gap Analysis)
@@ -474,9 +493,7 @@ class ResearchAgent:
             avg_confidence = sum(f["confidence"] for f in relevant_facts) / len(relevant_facts) if relevant_facts else 0
 
         # IMPROVISED: Semantic Deduplication (concise insights)
-        unique_facts = [f["fact"] for f in verified_facts[:30]]
-        if self.llm and len(unique_facts) > 10:
-             unique_facts = await self._semantic_deduplicate(unique_facts)
+        # (This block moved up to fix reference errors)
 
         # REFLECTION PASS: Self-Critique & Refinement
         if self.llm and depth == "deep":

@@ -106,7 +106,8 @@ class SerperSearch:
                             "title": item.get("title", ""),
                             "content": item.get("snippet", ""),
                             "url": item.get("link", ""),
-                            "score": 0.8
+                            "score": 0.8,
+                            "images": item.get("imageUrl") or item.get("images", []) # Serper sometimes provides imageUrl or images list
                         })
                     
                     # Knowledge graph if available
@@ -203,7 +204,8 @@ class DuckDuckGoSearch:
                         "title": r.get("title", ""),
                         "content": r.get("body", ""),
                         "url": r.get("href", ""),
-                        "score": 0.7
+                        "score": 0.7,
+                        "images": [r.get("image")] if r.get("image") else [] # DDG sometimes provides thumbnail/image
                     } for r in results]
             except ImportError:
                 # Fallback to duckduckgo_search if ddgs is not available
@@ -215,7 +217,8 @@ class DuckDuckGoSearch:
                             "title": r.get("title", ""),
                             "content": r.get("body", ""),
                             "url": r.get("href", ""),
-                            "score": 0.7
+                            "score": 0.7,
+                            "images": [r.get("image")] if r.get("image") else []
                         } for r in results]
                 except ImportError:
                     logger.warning(f"DuckDuckGo search requested but 'ddgs' or 'duckduckgo-search' package not found.")

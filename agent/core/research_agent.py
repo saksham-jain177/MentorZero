@@ -256,7 +256,7 @@ class ResearchAgent:
     instead of just retrieving from static database
     """
     
-    def __init__(self, llm_client=None, db_path: str = "./data/mentorzero.db", vector_db_path: str = "./data/vectorstore"):
+    def __init__(self, llm_client=None, db_path: str = "./data/mentorzero.db", vector_db_path: str = "./data/vectorstore", orchestrator=None):
         self.web_search = WebSearchTool()
         self.fact_verifier = FactVerifier()
         self.pdf_parser = PDFParser()
@@ -265,9 +265,53 @@ class ResearchAgent:
         self.vector_store = VectorStore(vector_db_path)
         self.azl_scorer = AZLScorer(llm_client)
         self.llm = llm_client
+        self.orchestrator = orchestrator # Reference to orchestrator for spawning tasks (Stage 25)
         self.research_cache = {}
         self.on_steering_event = None  # Hook for HITL (Human-In-The-Loop)
         self.fact_lineage = []  # Lineage: List[{fact, persona, query, url}]
+    
+    async def bootstrap_from_local(self, paths: List[str]):
+        """
+        Seed the research agent with local knowledge from files (Stage 25).
+        Supports PDF, TXT, and MD files.
+        """
+        logger.info(f"Bootstrapping research from local paths: {paths}")
+        all_facts = []
+        for path in paths:
+            if not os.path.exists(path):
+                continue
+            
+            ext = os.path.splitext(path)[1].lower()
+            text = ""
+            if ext == ".pdf":
+                text = self.pdf_parser.extract_text(path)
+            elif ext in [".txt", ".md", ".json"]:
+                try:
+                    with open(path, 'r', encoding='utf-8') as f:
+                        text = f.read()
+                except Exception as e:
+                    logger.error(f"Error reading local file {path}: {e}")
+            
+            if text:
+                # Treat the local content as a "verified source"
+                doc_sentences = re.split(r'[.!?]\s+', text)
+                facts = [{
+                    "fact": s.strip(),
+                    "confidence": 1.0,
+                    "metadata": [{
+                        "url": f"file://{path}",
+                        "persona": "Local Context",
+                        "query": f"Bootstrap: {os.path.basename(path)}"
+                    }]
+                } for s in doc_sentences if len(s.strip()) > 40][:50] # Limit per file
+                
+                all_facts.extend(facts)
+        
+        if all_facts:
+            logger.info(f"Ingested {len(all_facts)} facts from local bootstrap.")
+            self.vector_store.add_facts(all_facts, "bootstrap_session")
+            return True
+        return False
     
     async def research_topic(
         self, 
@@ -500,8 +544,29 @@ class ResearchAgent:
             logger.info("Entering Reflection phase...")
             reflection = await self._reflect_on_results(unique_facts, query)
             if reflection.get("is_sufficient") is False and reflection.get("gap_query"):
-                logger.info(f"Reflection identified critical gap: {reflection['gap_query']}")
-                final_gap_res = await self.web_search.search(reflection["gap_query"], depth="standard")
+                gap_query = reflection["gap_query"]
+                
+                # --- Stage 25: Recursive Discovery ---
+                # If we have an orchestrator, spawn a full SUB-RESEARCH task
+                if self.orchestrator and reflection.get("requires_deep_dive"):
+                    logger.info(f"Recursive Discovery: Spawning sub-research for '{gap_query}'")
+                    from agent.core.orchestrator import AgentTask
+                    sub_task = AgentTask(
+                        agent_name="research",
+                        task_type="research_topic",
+                        input_data={
+                            "query": gap_query,
+                            "depth": "standard", # Sub-tasks are standard depth to prevent infinite recursion
+                            "mode": mode if isinstance(mode, str) else mode.value
+                        },
+                        priority=7 # Higher priority than main tasks
+                    )
+                    self.orchestrator.spawn_task(sub_task)
+                    # We continue main research; the sub-research results will be available in the next pass 
+                    # or in the knowledge graph/vector store for subsequent queries.
+                    
+                logger.info(f"Filling gap: {gap_query}")
+                final_gap_res = await self.web_search.search(gap_query, depth="standard")
                 all_sources.extend(final_gap_res)
                 # Final re-verify and merge
                 verified_facts = self.fact_verifier.cross_reference(all_sources)
@@ -657,17 +722,18 @@ List the top 3 missing pieces of information."""
             return []
 
     async def _reflect_on_results(self, facts: List[str], query: str) -> Dict:
-        """Analyze current findings for hallucinations, bias, or missing critical info"""
+        """Analyze current findings for hallucinations, bias, or missing critical info (Stage 25)"""
         fact_bullet = "\n".join([f"- {f}" for f in facts[:10]])
         prompt = f"""Review the following facts about '{query}':
 {fact_bullet}
 
 Critique this research:
 1. Is it sufficient to provide a comprehensive answer? (True/False)
-2. Is there a critical missing piece of information?
+2. Is there a critical missing piece of information or an "unknown unknown"?
 3. If not sufficient, provide ONE highly targeted search query to fix it.
+4. Should this gap be explored with a full recursive research branch? (Set requires_deep_dive to True if the topic is complex/layered)
 
-Return JSON only: {{"is_sufficient": bool, "critique": "string", "gap_query": "string"}}"""
+Return JSON only: {{"is_sufficient": bool, "critique": "string", "gap_query": "string", "requires_deep_dive": bool}}"""
         try:
             res = await self.llm.send_prompt(prompt)
             match = re.search(r'\{.*\}', res, re.DOTALL)
@@ -675,7 +741,7 @@ Return JSON only: {{"is_sufficient": bool, "critique": "string", "gap_query": "s
                 return json.loads(match.group(0))
         except:
             pass
-        return {"is_sufficient": True}
+        return {"is_sufficient": True, "requires_deep_dive": False}
 
     async def _semantic_deduplicate(self, facts: List[str]) -> List[str]:
         """Use LLM to remove redundancy and consolidate facts into core insights"""

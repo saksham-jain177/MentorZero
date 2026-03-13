@@ -982,6 +982,19 @@
                         <option value="technical" style="background: var(--bg); color: var(--text);">Technical</option>
                     </select>
                 </div>
+
+                <!-- Research Depth Selector (Stage 25) -->
+                <div class="research-depth-selector"
+                    style="display: flex; gap: 0.5rem; align-items: center; background: var(--glass); padding: 0.4rem 0.8rem; border-radius: 10px; border: 1px solid var(--glass-border);">
+                    <i data-lucide="git-branch" style="width: 14px; height: 14px; color: var(--primary);"></i>
+                    <span style="font-size: 0.8rem; color: var(--text-dim); margin-right: 0.5rem;">Depth:</span>
+                    <select id="research-depth-select"
+                        style="background: none; border: none; color: var(--text); font-size: 0.8rem; cursor: pointer; outline: none; font-weight: 600;">
+                        <option value="quick" style="background: var(--bg); color: var(--text);">Quick</option>
+                        <option value="standard" selected style="background: var(--bg); color: var(--text);">Standard</option>
+                        <option value="deep" style="background: var(--bg); color: var(--text);">Deep (Hierarchical)</option>
+                    </select>
+                </div>
             </div>
 
             <div class="mode-toggle">
@@ -1022,6 +1035,11 @@
                     <i data-lucide="rocket"></i>
                     <span>Start Research</span>
                 </button>
+                <button class="btn btn-secondary" id="seed-upload-btn" title="Upload local files to bootstrap research">
+                    <i data-lucide="file-plus"></i>
+                    <span id="seed-count-label">Bootstrap Files</span>
+                </button>
+                <input type="file" id="seed-file-input" style="display: none;" multiple accept=".pdf,.txt,.md">
                 <button class="btn btn-secondary" id="clear-btn">
                     <i data-lucide="trash-2"></i>
                     <span>Clear</span>
@@ -1123,6 +1141,9 @@
         const API_BASE = 'http://localhost:8000/api/v2';
         const API_KEY = 'mz-default-dev-key'; // Default dev key
 
+        // Stage 25: Local Bootstrapping State (Shared with Stage 17)
+        let uploadedFilePaths = [];
+
         // Agent activation animation
         function activateAgent(agentId) {
             const indicator = document.getElementById(agentId);
@@ -1182,6 +1203,7 @@
                     query: query,
                     mode: mode,
                     research_mode: document.getElementById('research-mode-select').value,
+                    depth: document.getElementById('research-depth-select').value,
                     force_refresh: document.getElementById('force-refresh')?.checked || false,
                     seed_files: uploadedFilePaths,
                     vision_enabled: document.getElementById('vision-toggle').checked
@@ -1204,7 +1226,8 @@
                                 agent: data.agent,
                                 task: data.task,
                                 output: data.output || data.error,
-                                duration: data.duration
+                                duration: data.duration,
+                                level: data.level || 0
                             });
                             // Update progress roughly (4 agents total)
                             const currentProgress = parseFloat(document.getElementById('progress').style.width) || 0;
@@ -1473,6 +1496,14 @@
             const resultsDiv = document.getElementById('results');
             const card = document.createElement('div');
             card.className = 'result-card';
+            
+            // Show hierarchical depth (Stage 25)
+            const level = result.level || 0;
+            if (level > 0) {
+                card.style.marginLeft = (level * 2) + 'rem';
+                card.style.borderLeft = '4px solid var(--accent)';
+                card.style.background = 'rgba(255,255,255,0.02)';
+            }
 
             const agentIcons = {
                 'search': 'search',
@@ -1492,7 +1523,11 @@
                     </div>
                     <div class="result-time">${result.duration?.toFixed(2) || 0}s</div>
                 </div>
-                <div class="result-task">${result.task || 'Sub-task execution'}</div>
+                </div>
+                <div class="result-task">
+                    ${level > 0 ? '<span style="font-size: 0.7rem; color: var(--accent); margin-right: 0.5rem;">[SUB-RESEARCH L' + level + ']</span>' : ''}
+                    ${result.task || 'Sub-task execution'}
+                </div>
                 <div class="result-content">${formatOutput(result.output)}</div>
                 ${result.agent === 'research' ? '<div class="lineage-toggle" style="margin-top: 1rem; font-size: 0.8rem; color: var(--primary); cursor: pointer;"><i data-lucide="git-branch" style="width: 14px; height: 14px; vertical-align: middle; margin-right: 0.2rem;"></i> View Traceability Tree</div>' : ''}
                 <div class="lineage-tree"></div>
@@ -1624,6 +1659,45 @@
             document.getElementById('query-input').value = '';
             document.getElementById('results').innerHTML = '';
             document.getElementById('progress').style.width = '0%';
+            uploadedFilePaths = [];
+            document.getElementById('seed-count-label').textContent = 'Bootstrap Files';
+        });
+
+        // Stage 25: File Upload Logic
+        const seedInput = document.getElementById('seed-file-input');
+        const seedBtn = document.getElementById('seed-upload-btn');
+        const seedLabel = document.getElementById('seed-count-label');
+
+        seedBtn.addEventListener('click', () => seedInput.click());
+
+        seedInput.addEventListener('change', async (e) => {
+            const files = e.target.files;
+            if (!files.length) return;
+
+            seedLabel.textContent = `Uploading ${files.length} files...`;
+            seedBtn.disabled = true;
+
+            for (const file of files) {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const response = await fetch(`${API_BASE}/research/upload`, {
+                        method: 'POST',
+                        headers: { 'X-API-Key': API_KEY },
+                        body: formData
+                    });
+                    const data = await response.json();
+                    if (data.file_path) {
+                        uploadedFilePaths.push(data.file_path);
+                    }
+                } catch (err) {
+                    console.error('Upload failed:', err);
+                }
+            }
+
+            seedLabel.textContent = `Seeded (${uploadedFilePaths.length} files)`;
+            seedBtn.disabled = false;
         });
 
         function updateSystemStats(stats) {
@@ -1810,8 +1884,7 @@
         // Initialize Lucide icons
         lucide.createIcons();
 
-        // Multimodal / PDF Upload Logic (Stage 17)
-        const uploadedFilePaths = [];
+        // Multimodal / PDF Upload Logic (Stage 17) - Uses shared uploadedFilePaths
         const pdfInput = document.getElementById('pdf-input');
         const uploadBtn = document.getElementById('upload-pdf-btn');
         const seedContainer = document.getElementById('seed-docs-container');

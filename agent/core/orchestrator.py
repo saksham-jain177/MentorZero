@@ -31,6 +31,7 @@ class AgentTask:
     priority: int = 5
     max_duration: float = 30.0
     requires: Optional[List[str]] = None  # Dependencies on other tasks
+    level: int = 0 # Hierarchical depth (Stage 25)
 
 
 @dataclass
@@ -41,6 +42,7 @@ class TaskResult:
     duration: float
     success: bool
     error: Optional[str] = None
+    level: int = 0 # Hierarchical depth (Stage 25)
 
 
 class ResourceMonitor:
@@ -112,24 +114,50 @@ class AgentOrchestrator:
     ) -> List[TaskResult]:
         """
         Execute multiple tasks with specified mode
-        
-        Modes:
-        - PARALLEL: All at once (if resources allow)
-        - SEQUENTIAL: One by one
-        - ADAPTIVE: Decides based on system load
         """
+        self.task_queue = list(tasks)
+        self.results = {}
         
-        # Sort by priority
-        tasks.sort(key=lambda x: x.priority, reverse=True)
+        # Sort initial queue by priority
+        self.task_queue.sort(key=lambda x: x.priority, reverse=True)
         
         if mode == ExecutionMode.ADAPTIVE:
-            mode = self._decide_execution_mode(tasks)
+            mode = self._decide_execution_mode(self.task_queue)
             print(f"[Adaptive] Mode selected: {mode.value}")
         
-        if mode == ExecutionMode.PARALLEL:
-            return await self._execute_parallel(tasks, on_task_start, on_task_complete)
+        # Process the queue until empty (supports dynamic spawning)
+        final_results = []
+        while self.task_queue:
+            current_tasks = []
+            
+            if mode == ExecutionMode.PARALLEL:
+                # Take a batch of tasks that can run in parallel
+                batch_size = self.resource_monitor.max_parallel_agents
+                current_tasks = self.task_queue[:batch_size]
+                self.task_queue = self.task_queue[batch_size:]
+                
+                batch_results = await self._execute_parallel(current_tasks, on_task_start, on_task_complete)
+                final_results.extend(batch_results)
+            else:
+                # Sequential
+                task = self.task_queue.pop(0)
+                result = await self._execute_sequential([task], on_task_start, on_task_complete)
+                final_results.extend(result)
+                
+            # Allow for short break to let agents potentially spawn tasks via callbacks or direct refs
+            # In a real system, we'd use an event loop or a more robust shared queue
+            await asyncio.sleep(0.1)
+            
+        return final_results
+
+    def spawn_task(self, task: AgentTask):
+        """Allows agents to dynamically add tasks to the orchestrator"""
+        logger.info(f"Dynamically spawned task: {task.agent_name}.{task.task_type}")
+        # Insert at front if high priority, else append
+        if task.priority > 5:
+            self.task_queue.insert(0, task)
         else:
-            return await self._execute_sequential(tasks, on_task_start, on_task_complete)
+            self.task_queue.append(task)
     
     def _decide_execution_mode(self, tasks: List[AgentTask]) -> ExecutionMode:
         """Intelligently decide execution mode based on system state"""
@@ -183,7 +211,8 @@ class AgentOrchestrator:
                         output=None,
                         duration=0,
                         success=False,
-                        error=str(result)
+                        error=str(result),
+                        level=task.level
                     )
                     results.append(res)
                     if on_task_complete:
@@ -281,7 +310,8 @@ class AgentOrchestrator:
                 task_type=task.task_type,
                 output=result,
                 duration=duration,
-                success=True
+                success=True,
+                level=task.level
             )
             
             if on_task_complete:
@@ -299,7 +329,8 @@ class AgentOrchestrator:
                 output=None,
                 duration=task.max_duration,
                 success=False,
-                error=f"Timeout after {task.max_duration}s"
+                error=f"Timeout after {task.max_duration}s",
+                level=task.level
             )
             if on_task_complete:
                 if asyncio.iscoroutinefunction(on_task_complete):

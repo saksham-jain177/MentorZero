@@ -181,8 +181,10 @@ async def upload_seed_document(file: UploadFile = File(...)):
     await file.seek(0)
 
     # 2. Extension Validation
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    allowed_extensions = {".pdf", ".txt", ".md"}
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in allowed_extensions:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}")
         
     temp_dir = "./data/temp_uploads"
     os.makedirs(temp_dir, exist_ok=True)
@@ -554,7 +556,6 @@ async def research_websocket(websocket: WebSocket, api_key: Optional[str] = None
             execution_mode = mode_map.get(mode, ExecutionMode.ADAPTIVE)
 
             # GLOBAL SETTINGS OVERRIDE for this session
-            from agent.config import get_settings
             settings = get_settings()
             original_ttl = settings.cache_ttl_hours
             if force_refresh:
@@ -567,7 +568,8 @@ async def research_websocket(websocket: WebSocket, api_key: Optional[str] = None
                     "type": "agent_update",
                     "agent": task.agent_name,
                     "task": task.task_type,
-                    "status": "starting"
+                    "status": "starting",
+                    "level": task.level
                 })
 
             # Callback for task completion
@@ -582,7 +584,8 @@ async def research_websocket(websocket: WebSocket, api_key: Optional[str] = None
                     "status": "completed" if result.success else "failed",
                     "output": output if result.success else None,
                     "error": result.error if not result.success else None,
-                    "duration": result.duration
+                    "duration": result.duration,
+                    "level": result.level
                 })
 
                 # DELTA UPDATE: Send only new graph elements
